@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "tree-sitter-cli": "^0.26.5"
+    "tree-sitter-cli": "^0.26.5",
+    "@testing-library/jest-dom": "6.9.1"
   }
 }
