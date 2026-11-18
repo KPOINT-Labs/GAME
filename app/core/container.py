@@ -362,6 +362,7 @@ class Container(containers.DeclarativeContainer):
         wallet_repository=wallet_repository,
         wallet_transaction_repository=wallet_transaction_repository,
         strategy_service=strategy_service,
+        game_params_repository=game_params_repository,
     )
 
     user_service = providers.Factory(

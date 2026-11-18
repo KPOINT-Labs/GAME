@@ -937,6 +937,72 @@ class TestUserPointsService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result[0]["group"], "dynamic_calculation")
         self.users_game_config_repository.create.assert_awaited_once()
 
+    def _setup_single_task_simulation(self):
+        captured = []
+
+        class CapturingStrategy:
+            def simulate_strategy(self, data_to_simulate, userGroup, user_last_task):
+                captured.append(data_to_simulate)
+                return {"externalTaskId": data_to_simulate["task"].externalTaskId}
+
+        self.game_repository.read_by_column.return_value = SimpleNamespace(
+            id="game-1", externalGameId="external-game-1"
+        )
+        self.task_repository.read_by_column.return_value = [
+            SimpleNamespace(id="task-1", strategyId="strategy-1", externalTaskId="t-1")
+        ]
+        self.service.strategy_service.get_strategy_by_id = MagicMock(
+            return_value=object()
+        )
+        self.users_repository.read_by_column.return_value = SimpleNamespace(
+            id="user-id-1", externalUserId="user_1"
+        )
+        self.user_points_repository.get_last_task_by_userId.return_value = None
+        self.service.strategy_service.get_Class_by_id = MagicMock(
+            return_value=CapturingStrategy()
+        )
+        return captured
+
+    async def test_get_points_simulated_of_user_in_game_passes_game_params(self):
+        captured = self._setup_single_task_simulation()
+        game_params_repository = AsyncMock()
+        game_params_repository.read_by_column.return_value = [
+            SimpleNamespace(key="variable_streak_bonus_cap", value="25"),
+            SimpleNamespace(key="variable_basic_points", value="10"),
+        ]
+        self.service.game_params_repository = game_params_repository
+
+        await self.service.get_points_simulated_of_user_in_game("game-1", "user_1")
+
+        game_params_repository.read_by_column.assert_awaited_once_with(
+            "gameId", "game-1", not_found_raise_exception=False, only_one=False
+        )
+        self.assertEqual(
+            captured[0]["gameParams"],
+            {"variable_streak_bonus_cap": "25", "variable_basic_points": "10"},
+        )
+
+    async def test_get_points_simulated_of_user_in_game_without_params_repository(
+        self,
+    ):
+        captured = self._setup_single_task_simulation()
+
+        await self.service.get_points_simulated_of_user_in_game("game-1", "user_1")
+
+        self.assertEqual(captured[0]["gameParams"], {})
+
+    async def test_get_points_simulated_of_user_in_game_with_game_without_params(
+        self,
+    ):
+        captured = self._setup_single_task_simulation()
+        game_params_repository = AsyncMock()
+        game_params_repository.read_by_column.return_value = None
+        self.service.game_params_repository = game_params_repository
+
+        await self.service.get_points_simulated_of_user_in_game("game-1", "user_1")
+
+        self.assertEqual(captured[0]["gameParams"], {})
+
     async def test_get_points_simulated_of_user_in_game_raises_when_simulate_missing(
         self,
     ):

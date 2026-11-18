@@ -61,6 +61,52 @@ def count_consecutive_active_days(active_dates, today):
     return streak
 
 
+STREAK_BONUS_CAP_PARAM = "variable_streak_bonus_cap"
+
+
+def resolve_streak_bonus_cap(game_params, default):
+    """
+    Streak bonus cap for a game: its ``variable_streak_bonus_cap`` param, else
+    ``default``.
+
+    Game param values are stored as strings. A value that is not a
+    non-negative whole number is ignored (with a warning) and ``default`` is
+    used instead.
+
+    Args:
+        game_params (dict | None): The game's params as ``{key: value}``.
+        default (int): The strategy's default cap.
+
+    Returns:
+        int: The cap in points. ``0`` means no cap.
+    """
+    raw = (game_params or {}).get(STREAK_BONUS_CAP_PARAM)
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        number = float(str(raw).strip())
+    except ValueError:
+        number = None
+    if number is None or not number.is_integer() or number < 0:
+        logger.warning(
+            "Ignoring invalid %s=%r; expected a non-negative whole number of points",
+            STREAK_BONUS_CAP_PARAM,
+            raw,
+        )
+        return default
+    return int(number)
+
+
+def cap_streak_bonus(dim_s_value, cap):
+    """
+    Limit the streak bonus (``DIM_S``) to ``cap`` points; ``cap <= 0`` means
+    no cap.
+    """
+    if dim_s_value is not None and cap and cap > 0:
+        return min(dim_s_value, cap)
+    return dim_s_value
+
+
 def get_random_values_from_tasks(all_records):
     """
     Extracts all dimensions from the tasks and generates random values
@@ -337,6 +383,9 @@ class GREENCROWDGamificationStrategy(BaseStrategy):  # noqa
         self.variable_basic_points = 10
         self.variable_lbe_multiplier = 0.5
         self.variable_simulation_valid_until = 15
+        # Maximum DIM_S points per award. 0 = no cap. Set per game with the
+        # game param ``variable_streak_bonus_cap``.
+        self.variable_streak_bonus_cap = 0
         self.time_slots = [(0, 6), (6, 12), (12, 18), (18, 24)]
 
     def generate_logic_graph(self, format="png"):
@@ -497,6 +546,8 @@ class GREENCROWDGamificationStrategy(BaseStrategy):  # noqa
                 "task": dict,            # single task object
                 "allTasks": list,        # all tasks
                 "externalUserId": str,   # the user the simulation is run for
+                "gameParams": dict,      # optional {key: value} game params;
+                                         # reads variable_streak_bonus_cap
             }
 
         Returns:
@@ -606,6 +657,15 @@ class GREENCROWDGamificationStrategy(BaseStrategy):  # noqa
             DIM_PP = dynamic_calculated.get("DIM_PP")
             DIM_S = dynamic_calculated.get("DIM_S")
         # END DYNAMIC_CALCULATION ########################################################
+
+        # The cap applies to every group: random_range and average_score are
+        # drawn from past awards, which may predate the cap.
+        DIM_S = cap_streak_bonus(
+            DIM_S,
+            resolve_streak_bonus_cap(
+                data_to_simulate.get("gameParams"), self.variable_streak_bonus_cap
+            ),
+        )
         total_simulated_points = DIM_BP + DIM_LBE + DIM_TD + DIM_PP + DIM_S
 
         return SimulatedTaskPoints(

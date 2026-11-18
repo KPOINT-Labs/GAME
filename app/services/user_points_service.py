@@ -14,6 +14,7 @@ DI-injected class that endpoints and strategy engines depend on:
 
 import logging
 
+from app.repository.game_params_repository import GameParamsRepository
 from app.repository.game_repository import GameRepository
 from app.repository.task_repository import TaskRepository
 from app.repository.user_game_config_repository import UserGameConfigRepository
@@ -48,11 +49,15 @@ class UserPointsService(
         wallet_repository: WalletRepository,
         wallet_transaction_repository: WalletTransactionRepository,
         strategy_service: "StrategyService | None" = None,
+        game_params_repository: GameParamsRepository | None = None,
     ) -> None:
         self.user_points_repository = user_points_repository
         self.users_repository = users_repository
         self.users_game_config_repository = users_game_config_repository
         self.game_repository = game_repository
+        # Optional for the same backward-compat reason as ``strategy_service``:
+        # without it, simulations run with each strategy's default variables.
+        self.game_params_repository = game_params_repository
         self.task_repository = task_repository
         self.wallet_repository = wallet_repository
         self.wallet_transaction_repository = wallet_transaction_repository
