@@ -20,6 +20,20 @@ logger = logging.getLogger(__name__)
 
 
 class PointsSimulationMixin(UserPointsContext):
+    async def _read_game_params(self, game_id) -> dict[str, Any]:
+        """Return the game's params as ``{key: value}`` (values are raw strings).
+
+        Strategies read game-level settings (for example GREENCROWD's
+        ``variable_streak_bonus_cap``) from ``data_to_simulate["gameParams"]``.
+        Empty when no params repository is wired.
+        """
+        if getattr(self, "game_params_repository", None) is None:
+            return {}
+        params = await self.game_params_repository.read_by_column(
+            "gameId", game_id, not_found_raise_exception=False, only_one=False
+        )
+        return {param.key: param.value for param in params or []}
+
     async def get_points_simulated_of_user_in_game(
         self,
         gameId,
@@ -139,6 +153,8 @@ class PointsSimulationMixin(UserPointsContext):
 
         response = []
 
+        game_params = await self._read_game_params(game.id)
+
         user_last_task = await self.user_points_repository.get_last_task_by_userId(
             user.id
         )
@@ -164,6 +180,7 @@ class PointsSimulationMixin(UserPointsContext):
                     "task": task,
                     "allTasks": tasks,
                     "externalUserId": externalUserId,
+                    "gameParams": game_params,
                 }
                 try:
                     task_simulation = strategy_instance.simulate_strategy(
