@@ -5,8 +5,9 @@ These pin the CURRENT numeric behaviour of ``get_dynamic_values_from_tasks``
 and ``calculate_points`` so that upcoming refactors (persisting a per-row
 points breakdown, fixing the streak logic) cannot change scores silently.
 
-Tests marked "KNOWN BUG" assert today's incorrect output on purpose. When the
-streak calculation is fixed, update those expectations deliberately.
+The DIM_S cases below were updated when the streak fix landed (previously
+they pinned the buggy consecutive-day count). The streak definition itself is
+specified in ``test_greencrowd_streak.py``.
 """
 
 import datetime
@@ -75,17 +76,16 @@ STREAK_CASES = [
     # (id, activity days for user-1, computed consecutive_days, DIM_S)
     ("no_activity", [], 0, 10),
     ("only_today", [_at(11, 18)], 1, 11),
-    # KNOWN BUG: a real 3-day streak is counted as 2.
-    ("three_consecutive_days", [_at(11, d) for d in (16, 17, 18)], 2, 13),
-    # KNOWN BUG: a real 5-day streak is counted as 3.
-    ("five_consecutive_days", [_at(11, d) for d in range(14, 19)], 3, 15),
-    # KNOWN BUG: a real 10-day streak is counted as 5 (bonus doubles).
-    ("ten_consecutive_days", [_at(11, d) for d in range(9, 19)], 5, 20),
-    # Gaps break a real streak; current logic still counts today.
+    # Fixed: previously counted as 2.
+    ("three_consecutive_days", [_at(11, d) for d in (16, 17, 18)], 3, 15),
+    # Fixed: previously counted as 3.
+    ("five_consecutive_days", [_at(11, d) for d in range(14, 19)], 5, 20),
+    # Fixed: previously counted as 5.
+    ("ten_consecutive_days", [_at(11, d) for d in range(9, 19)], 10, 40),
+    # Gaps break the streak; only today counts.
     ("every_other_day", [_at(11, d) for d in (14, 16, 18)], 1, 11),
-    # KNOWN BUG: 30 active days in October, then idle for 19 days,
-    # still yields a "streak" of 6 instead of 0.
-    ("idle_19_days_after_30_active", [_at(10, d) for d in range(1, 31)], 6, 23),
+    # Fixed: 30 active days then 19 idle days previously yielded 6.
+    ("idle_19_days_after_30_active", [_at(10, d) for d in range(1, 31)], 0, 10),
 ]
 
 
