@@ -136,7 +136,7 @@ class UserPointsRepository(BaseRepository):
 
         Like :meth:`get_all_UserPoints_by_taskId` but also returns a
         ``pointsData`` array aggregating each award's ``points``, ``caseName``,
-        ``data``, ``description`` and ``created_at``.
+        ``data``, ``description``, ``created_at`` and ``breakdown``.
 
         Args:
             taskId: Internal task identifier.
@@ -163,6 +163,8 @@ class UserPointsRepository(BaseRepository):
                             UserPoints.description,
                             "created_at",
                             UserPoints.created_at,
+                            "breakdown",
+                            UserPoints.breakdown,
                         )
                     ).label("pointsData"),
                 )
@@ -182,7 +184,7 @@ class UserPointsRepository(BaseRepository):
         Returns:
             list: Rows of ``(externalUserId, points, timesAwarded,
             pointsData)`` where ``pointsData`` aggregates each award's
-            ``points``, ``caseName`` and ``created_at``.
+            ``points``, ``caseName``, ``created_at`` and ``breakdown``.
         """
         async with self.session_factory() as session:
             stmt = (
@@ -198,6 +200,8 @@ class UserPointsRepository(BaseRepository):
                             UserPoints.caseName,
                             "created_at",
                             UserPoints.created_at,
+                            "breakdown",
+                            UserPoints.breakdown,
                         )
                     ).label("pointsData"),
                 )
@@ -243,6 +247,8 @@ class UserPointsRepository(BaseRepository):
                             UserPoints.caseName,
                             "created_at",
                             UserPoints.created_at,
+                            "breakdown",
+                            UserPoints.breakdown,
                         )
                     ).label("pointsData"),
                 )

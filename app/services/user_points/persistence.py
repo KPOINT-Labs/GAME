@@ -66,10 +66,14 @@ class PointsPersistenceMixin(UserPointsContext):
         external_user_id: str,
         external_task_id: str,
         idempotency_key: str = None,
+        breakdown: dict = None,
     ) -> tuple[Any, Any, Any]:
         """
         Persists points assignment, wallet increment and wallet transaction in
         one database transaction.
+
+        ``breakdown`` (optional) is stored on the points row only; it is not
+        copied into ``data`` or the wallet transaction.
         """
         async with self.user_points_repository.session_factory() as session:
             try:
@@ -92,6 +96,7 @@ class PointsPersistenceMixin(UserPointsContext):
                     description=description,
                     apiKey_used=api_key,
                     idempotencyKey=idempotency_key,
+                    breakdown=breakdown,
                 )
                 user_points = await self.user_points_repository.create(
                     user_points_schema,

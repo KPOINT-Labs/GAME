@@ -26,4 +26,6 @@ def upgrade():
 
 def downgrade():
     op.execute("DROP INDEX IF EXISTS ix_useractions_user_created_at")
-    op.execute("DROP INDEX IF EXISTS ix_tasks_game_external_task")
+    # ix_tasks_game_external_task is owned by 6f2e4b9a1c3d (the CREATE ... IF
+    # NOT EXISTS above is a no-op after it), so it is left for that revision's
+    # downgrade to drop. Dropping it here broke `alembic downgrade base`.
