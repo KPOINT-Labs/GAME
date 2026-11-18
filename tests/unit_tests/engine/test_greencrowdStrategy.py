@@ -16,14 +16,6 @@ from app.engine.greencrowdStrategy import (
 from app.schema.task_schema import SimulatedTaskPoints
 
 
-class QueryRecords:
-    def __init__(self, records):
-        self._records = records
-
-    def all(self):
-        return self._records
-
-
 def _build_sim_task_dict(
     external_task_id,
     dim_bp=1,
@@ -61,6 +53,12 @@ def _build_strategy_with_mocked_container():
     user_points_service = MagicMock()
     user_service = MagicMock()
     logs_service = MagicMock()
+    # These service methods are async in the app; mock them as such so a
+    # missing ``await`` in the strategy fails here instead of in production.
+    user_points_service.get_all_point_of_tasks_list = AsyncMock(return_value=[])
+    user_points_service.get_points_of_simulated_task = AsyncMock(return_value=[])
+    user_service.get_user_by_externalUserId = AsyncMock()
+    game_service.get_game_by_external_id = AsyncMock()
     with patch(
         "app.engine.greencrowdStrategy.Container.task_service",
         new=MagicMock(return_value=task_service),
@@ -155,7 +153,7 @@ def test_get_dynamic_values_from_tasks_returns_zero_when_external_task_id_invali
     result = get_dynamic_values_from_tasks(
         task=task,
         list_ids_tasks=[],
-        all_records=QueryRecords([]),
+        all_records=[],
         user=SimpleNamespace(id="user-1"),
         variable_basic_points=10,
         variable_lbe_multiplier=0.5,
@@ -192,7 +190,7 @@ def test_get_dynamic_values_from_tasks_calculates_dimensions_and_handles_bad_tas
             {"id": "task-a", "externalTaskId": "poi_1"},
             {"id": "task-b", "externalTaskId": "bad-task-id"},
         ],
-        all_records=QueryRecords(records),
+        all_records=records,
         user=user,
         variable_basic_points=10,
         variable_lbe_multiplier=0.5,
@@ -235,14 +233,14 @@ def test_strategy_init_generate_logic_graph_and_hash():
     assert hash_1 != hash_3
 
 
-def test_simulate_strategy_returns_internal_server_error_on_missing_data():
+async def test_simulate_strategy_returns_internal_server_error_on_missing_data():
     strategy = _build_strategy_with_mocked_container()
-    result = strategy.simulate_strategy(data_to_simulate={})
+    result = await strategy.simulate_strategy(data_to_simulate={})
 
     assert isinstance(result, InternalServerError)
 
 
-def test_simulate_strategy_returns_zero_points_when_last_task_is_old():
+async def test_simulate_strategy_returns_zero_points_when_last_task_is_old():
     strategy = _build_strategy_with_mocked_container()
     task = SimpleNamespace(id="task-1", externalTaskId="poi_1")
     old_point = SimpleNamespace(
@@ -251,7 +249,7 @@ def test_simulate_strategy_returns_zero_points_when_last_task_is_old():
         - datetime.timedelta(seconds=400),
     )
 
-    result = strategy.simulate_strategy(
+    result = await strategy.simulate_strategy(
         data_to_simulate={
             "task": task,
             "allTasks": [task],
@@ -264,7 +262,7 @@ def test_simulate_strategy_returns_zero_points_when_last_task_is_old():
     assert result.totalSimulatedPoints == 0
 
 
-def test_simulate_strategy_random_range_branch():
+async def test_simulate_strategy_random_range_branch():
     strategy = _build_strategy_with_mocked_container()
     task = SimpleNamespace(id="task-1", externalTaskId="poi_1")
     strategy.user_points_service.get_all_point_of_tasks_list.return_value = [
@@ -288,7 +286,7 @@ def test_simulate_strategy_random_range_branch():
     with patch(
         "app.engine.greencrowdStrategy.random.randint", side_effect=[1, 2, 3, 4, 5]
     ):
-        result = strategy.simulate_strategy(
+        result = await strategy.simulate_strategy(
             data_to_simulate={
                 "task": task,
                 "allTasks": [task],
@@ -301,7 +299,7 @@ def test_simulate_strategy_random_range_branch():
     assert result.totalSimulatedPoints == 15
 
 
-def test_simulate_strategy_average_score_branch():
+async def test_simulate_strategy_average_score_branch():
     strategy = _build_strategy_with_mocked_container()
     task = SimpleNamespace(id="task-1", externalTaskId="poi_1")
     strategy.user_points_service.get_all_point_of_tasks_list.return_value = [
@@ -323,7 +321,7 @@ def test_simulate_strategy_average_score_branch():
         )
     ]
 
-    result = strategy.simulate_strategy(
+    result = await strategy.simulate_strategy(
         data_to_simulate={
             "task": task,
             "allTasks": [task],
@@ -336,37 +334,33 @@ def test_simulate_strategy_average_score_branch():
     assert result.totalSimulatedPoints == 30
 
 
-def test_simulate_strategy_dynamic_calculation_branch():
+async def test_simulate_strategy_dynamic_calculation_branch():
     strategy = _build_strategy_with_mocked_container()
     now_utc = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
     task = SimpleNamespace(id="task-1", externalTaskId="poi_1")
-    strategy.user_points_service.get_all_point_of_tasks_list.return_value = (
-        QueryRecords(
-            [
-                SimpleNamespace(
-                    taskId="task-1",
-                    userId="user-1",
-                    created_at=now_utc - datetime.timedelta(hours=6),
-                ),
-                SimpleNamespace(
-                    taskId="task-1",
-                    userId="user-1",
-                    created_at=now_utc - datetime.timedelta(hours=3),
-                ),
-                SimpleNamespace(
-                    taskId="task-2",
-                    userId="user-2",
-                    created_at=now_utc - datetime.timedelta(hours=1),
-                ),
-            ]
-        )
-    )
+    strategy.user_points_service.get_all_point_of_tasks_list.return_value = [
+        SimpleNamespace(
+            taskId="task-1",
+            userId="user-1",
+            created_at=now_utc - datetime.timedelta(hours=6),
+        ),
+        SimpleNamespace(
+            taskId="task-1",
+            userId="user-1",
+            created_at=now_utc - datetime.timedelta(hours=3),
+        ),
+        SimpleNamespace(
+            taskId="task-2",
+            userId="user-2",
+            created_at=now_utc - datetime.timedelta(hours=1),
+        ),
+    ]
     strategy.user_service.get_user_by_externalUserId.return_value = SimpleNamespace(
         id="user-1"
     )
     second_task = SimpleNamespace(id="task-2", externalTaskId="poi_2")
 
-    result = strategy.simulate_strategy(
+    result = await strategy.simulate_strategy(
         data_to_simulate={
             "task": task,
             "allTasks": [task, second_task],

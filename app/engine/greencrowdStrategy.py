@@ -209,7 +209,7 @@ def get_dynamic_values_from_tasks(
             - "DIM_PP": Points adjusted for participation periodicity.
             - "DIM_S": Streak-based points for continuous participation.
     """
-    all_records = all_records.all()
+    all_records = list(all_records)
     try:
         poi_external_id = task.externalTaskId.split("_")[1]
     except Exception:
@@ -517,7 +517,7 @@ class GREENCROWDGamificationStrategy(BaseStrategy):  # noqa
             (configs.SECRET_KEY + str(data_string)).encode("utf-8")
         ).hexdigest()
 
-    def simulate_strategy(
+    async def simulate_strategy(
         self,
         data_to_simulate: dict = None,
         userGroup: str = "dynamic",
@@ -613,7 +613,7 @@ class GREENCROWDGamificationStrategy(BaseStrategy):  # noqa
                 {"id": task.id, "externalTaskId": task.externalTaskId}
             )
 
-        all_records = self.user_points_service.get_all_point_of_tasks_list(
+        all_records = await self.user_points_service.get_all_point_of_tasks_list(
             list_ids_tasks_to_ask, withData=True
         )
 
@@ -642,7 +642,7 @@ class GREENCROWDGamificationStrategy(BaseStrategy):  # noqa
 
         # DYNAMIC_CALCULATION ########################################################
         if userGroup == "dynamic_calculation":
-            user = self.user_service.get_user_by_externalUserId(external_user_id)
+            user = await self.user_service.get_user_by_externalUserId(external_user_id)
             dynamic_calculated = get_dynamic_values_from_tasks(
                 task_to_simulate,
                 list_ids_tasks,
@@ -730,7 +730,7 @@ class GREENCROWDGamificationStrategy(BaseStrategy):  # noqa
         tasks = data.get("tasks", [])
         wasCalculated = False
         if tasks == []:
-            game = self.game_service.get_game_by_external_id(externalGameId)
+            game = await self.game_service.get_game_by_external_id(externalGameId)
             tasks_simulated, externalGameId = (
                 await self.user_points_service.get_points_simulated_of_user_in_game(
                     game.id, externalUserId, assign_control_group=True
@@ -760,12 +760,12 @@ class GREENCROWDGamificationStrategy(BaseStrategy):  # noqa
 
         callback_data = None
         breakdown = None
-        previous_points = self.user_points_service.get_points_of_simulated_task(
+        previous_points = await self.user_points_service.get_points_of_simulated_task(
             externalTaskId, simulationHash
         )
         if previous_points:
 
-            game = self.game_service.get_game_by_external_id(externalGameId)
+            game = await self.game_service.get_game_by_external_id(externalGameId)
 
             tasks_simulated, externalGameId = (
                 await self.user_points_service.get_points_simulated_of_user_in_game(
@@ -808,7 +808,7 @@ class GREENCROWDGamificationStrategy(BaseStrategy):  # noqa
             )
 
             if isExpired:
-                game = self.game_service.get_game_by_external_id(externalGameId)
+                game = await self.game_service.get_game_by_external_id(externalGameId)
 
                 tasks_simulated, externalGameId = (
                     await self.user_points_service.get_points_simulated_of_user_in_game(

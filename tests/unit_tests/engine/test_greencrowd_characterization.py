@@ -18,7 +18,6 @@ import pytest
 
 from app.engine.greencrowdStrategy import get_dynamic_values_from_tasks
 from tests.unit_tests.engine.test_greencrowdStrategy import (
-    QueryRecords,
     _build_sim_task_dict,
     _build_strategy_with_mocked_container,
 )
@@ -61,7 +60,7 @@ def _dynamic(records, list_ids_tasks=None, task=None, user_id="user-1"):
     return get_dynamic_values_from_tasks(
         task=task,
         list_ids_tasks=list_ids_tasks,
-        all_records=QueryRecords(records),
+        all_records=records,
         user=SimpleNamespace(id=user_id),
         variable_basic_points=BP,
         variable_lbe_multiplier=LBE_MULTIPLIER,
