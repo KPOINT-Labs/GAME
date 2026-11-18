@@ -21,6 +21,40 @@ from app.util.is_valid_slug import is_valid_slug
 logger = logging.getLogger(__name__)
 
 
+def _validate_breakdown(breakdown, points, externalTaskId):
+    """
+    Reject a strategy-provided breakdown that does not explain ``points``.
+
+    A breakdown must be ``{"components": [{"key": str, "points": int}, ...]}``
+    whose component points sum to ``points``. A mismatch is a strategy bug,
+    so it surfaces as a 500 and nothing is persisted.
+    """
+    components = breakdown.get("components") if isinstance(breakdown, dict) else None
+    valid = isinstance(components, list) and all(
+        isinstance(c, dict)
+        and isinstance(c.get("key"), str)
+        and isinstance(c.get("points"), (int, float))
+        and not isinstance(c.get("points"), bool)
+        for c in components
+    )
+    if not valid:
+        raise InternalServerError(
+            detail=(
+                f"Invalid points breakdown for task with externalTaskId: "
+                f"{externalTaskId}: expected a list of components with "
+                f"'key' and 'points'"
+            )
+        )
+    total = sum(c["points"] for c in components)
+    if total != points:
+        raise InternalServerError(
+            detail=(
+                f"Points breakdown for task with externalTaskId: {externalTaskId} "
+                f"sums to {total} but {points} points were calculated"
+            )
+        )
+
+
 class PointsAssignmentMixin(PointsPersistenceMixin):
     async def assign_points_to_user_directly(
         self,
@@ -216,7 +250,9 @@ class PointsAssignmentMixin(PointsPersistenceMixin):
                 externalUserId=externalUserId,
                 data=data_to_add,
             )
-            points, case_name, callbackData = (result_calculated_points + (None,))[:3]
+            points, case_name, callbackData, breakdown = (
+                tuple(result_calculated_points) + (None, None)
+            )[:4]
             logger.debug(
                 "Calculated points result: points=%s case_name=%s callbackData_present=%s",
                 points,
@@ -266,6 +302,8 @@ class PointsAssignmentMixin(PointsPersistenceMixin):
                     f"Case name not resolved for task with externalTaskId: {externalTaskId} and user with externalUserId: {externalUserId}"  # noqa
                 )
             )
+        if breakdown is not None:
+            _validate_breakdown(breakdown, points, externalTaskId)
         idempotency_key = self._extract_idempotency_key(data_to_add)
         user_points, _, _ = await self._persist_points_wallet_and_transaction(
             user_id=user.id,
@@ -278,6 +316,7 @@ class PointsAssignmentMixin(PointsPersistenceMixin):
             external_user_id=externalUserId,
             external_task_id=externalTaskId,
             idempotency_key=idempotency_key,
+            breakdown=breakdown,
         )
 
         response = AssignedPointsToExternalUserId(

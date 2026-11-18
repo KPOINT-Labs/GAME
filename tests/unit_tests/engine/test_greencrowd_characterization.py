@@ -185,9 +185,11 @@ async def test_calculate_points_sums_each_dimension_exactly_once():
         "app.engine.greencrowdStrategy.calculate_hash_simulated_strategy",
         return_value="h",
     ):
-        points, case_name, callback_data = await strategy.calculate_points(
-            "game-1", "poi_1", "user-1", data
-        )
+        result = await strategy.calculate_points("game-1", "poi_1", "user-1", data)
+
+    # Slice so this keeps passing once an optional 4th element (breakdown)
+    # is added to the return value.
+    points, case_name, callback_data = result[:3]
 
     # Distinct powers of two: any dropped or double-counted dimension
     # produces a different total.
@@ -197,12 +199,11 @@ async def test_calculate_points_sums_each_dimension_exactly_once():
 
 
 @pytest.mark.asyncio
-async def test_calculate_points_depends_on_dimension_order():
+async def test_calculate_points_is_independent_of_dimension_order():
     """
-    Current behaviour: dimensions are read by list position
-    (``dimensions[0]`` must be DIM_BP, ..., ``dimensions[4]`` DIM_S).
-    A reordered payload yields ``None`` lookups and a TypeError.
-    Expected to change when dimensions are looked up by key.
+    Dimensions are looked up by key, so a reordered payload scores the same.
+    (Previously they were read by list position and a reordered payload
+    raised TypeError.)
     """
     strategy = _strategy_with_valid_hash()
     task = _build_sim_task_dict("poi_1")
@@ -212,5 +213,7 @@ async def test_calculate_points_depends_on_dimension_order():
     with patch(
         "app.engine.greencrowdStrategy.calculate_hash_simulated_strategy",
         return_value="h",
-    ), pytest.raises(TypeError):
-        await strategy.calculate_points("game-1", "poi_1", "user-1", data)
+    ):
+        result = await strategy.calculate_points("game-1", "poi_1", "user-1", data)
+
+    assert result[0] == 15  # default dimensions 1 + 2 + 3 + 4 + 5

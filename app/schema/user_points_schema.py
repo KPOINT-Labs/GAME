@@ -88,6 +88,7 @@ class PointsData(BaseModel):
         points (int): Points assigned in this event.
         caseName (str): Case/category applied to this event.
         created_at (str): Event timestamp in ISO-8601 format.
+        breakdown (Optional[dict]): Per-component explanation of ``points``.
     """
 
     points: int = Field(
@@ -104,6 +105,22 @@ class PointsData(BaseModel):
         ...,
         description="Timestamp when points were created (ISO-8601 UTC string).",
         examples=["2026-02-10T12:20:00Z"],
+    )
+    breakdown: Optional[dict] = Field(
+        default=None,
+        description=(
+            "Per-component explanation of `points`, when the strategy provides "
+            "one. Component points sum to `points`."
+        ),
+        examples=[
+            {
+                "version": 1,
+                "components": [
+                    {"key": "DIM_BP", "points": 10},
+                    {"key": "DIM_S", "points": 5},
+                ],
+            }
+        ],
     )
 
 
@@ -284,6 +301,10 @@ class UserPointsAssign(BaseUserPointsBaseModel):
         default=None,
         description="Optional idempotency key to deduplicate retries safely.",
         examples=["k6-1739301225000-points-vu1-iter10"],
+    )
+    breakdown: Optional[dict] = Field(
+        default=None,
+        description="Per-component explanation of `points` produced by the strategy.",
     )
 
     @staticmethod

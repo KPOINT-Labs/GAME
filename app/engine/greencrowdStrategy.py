@@ -23,6 +23,9 @@ from app.util.calculate_hash_simulated_strategy import calculate_hash_simulated_
 
 logger = logging.getLogger(__name__)
 
+# Scoring dimensions, in the order they are summed and reported.
+DIMENSION_KEYS = ("DIM_BP", "DIM_LBE", "DIM_TD", "DIM_PP", "DIM_S")
+
 
 def get_random_values_from_tasks(all_records):
     """
@@ -624,6 +627,14 @@ class GREENCROWDGamificationStrategy(BaseStrategy):  # noqa
                     ...
                 ]
             }
+
+        Returns:
+            tuple: ``(-1, "Invalid hash")`` when the simulation hash does not
+            match; otherwise ``(points, case_name, callback_data, breakdown)``
+            where ``breakdown`` lists each dimension's points
+            (``{"version": 1, "components": [{"key": "DIM_BP", "points": n},
+            ...]}``) and sums to ``points``. ``breakdown`` is ``None`` when the
+            task is not found.
         """
         case_name = "-"
         points = -1
@@ -662,6 +673,7 @@ class GREENCROWDGamificationStrategy(BaseStrategy):  # noqa
         )
 
         callback_data = None
+        breakdown = None
         previous_points = self.user_points_service.get_points_of_simulated_task(
             externalTaskId, simulationHash
         )
@@ -732,15 +744,17 @@ class GREENCROWDGamificationStrategy(BaseStrategy):  # noqa
                 if case_name == "-":
                     case_name = "Valid Simulation - Origin: Expired simulation"
 
-            points = 0
-            DIM_BP = task.dimensions[0].get("DIM_BP")
-            DIM_LBE = task.dimensions[1].get("DIM_LBE")
-            DIM_TD = task.dimensions[2].get("DIM_TD")
-            DIM_PP = task.dimensions[3].get("DIM_PP")
-            DIM_S = task.dimensions[4].get("DIM_S")
-
-            points = DIM_BP + DIM_LBE + DIM_TD + DIM_PP + DIM_S
+            # Dimensions arrive as a list of single-key dicts; look them up by
+            # key so the payload order does not matter.
+            dimension_values = {}
+            for dimension in task.dimensions:
+                dimension_values.update(dimension)
+            components = [
+                {"key": key, "points": dimension_values[key]} for key in DIMENSION_KEYS
+            ]
+            points = sum(component["points"] for component in components)
+            breakdown = {"version": 1, "components": components}
             if case_name == "-":
                 case_name = "Valid Simulation"
 
-        return points, case_name, callback_data
+        return points, case_name, callback_data, breakdown

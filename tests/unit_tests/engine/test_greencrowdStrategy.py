@@ -425,7 +425,7 @@ async def test_calculate_points_with_empty_tasks_generates_valid_simulation():
         "app.engine.greencrowdStrategy.calculate_hash_simulated_strategy",
         side_effect=["hash-initial", "hash-later"],
     ):
-        points, case_name, callback_data = await strategy.calculate_points(
+        points, case_name, callback_data, _breakdown = await strategy.calculate_points(
             "game-1", "poi_1", "user-1", data
         )
 
@@ -457,7 +457,7 @@ async def test_calculate_points_uses_previous_points_branch():
         "app.engine.greencrowdStrategy.calculate_hash_simulated_strategy",
         side_effect=["valid-hash", "new-hash"],
     ), patch("app.engine.greencrowdStrategy.add_log", new=AsyncMock()):
-        points, case_name, callback_data = await strategy.calculate_points(
+        points, case_name, callback_data, _breakdown = await strategy.calculate_points(
             "game-1",
             "poi_1",
             "user-1",
@@ -493,7 +493,7 @@ async def test_calculate_points_handles_expired_simulation():
         "app.engine.greencrowdStrategy.calculate_hash_simulated_strategy",
         side_effect=["valid-hash", "renewed-hash"],
     ):
-        points, case_name, callback_data = await strategy.calculate_points(
+        points, case_name, callback_data, _breakdown = await strategy.calculate_points(
             "game-1",
             "poi_1",
             "user-1",

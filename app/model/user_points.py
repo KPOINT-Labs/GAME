@@ -14,6 +14,9 @@ class UserPoints(BaseModel, table=True):
         points (int): The number of points.
         caseName (str): The name of the case.
         data (dict): A JSON object containing additional data.
+        breakdown (dict): Optional per-component explanation of ``points``
+            (``{"version": 1, "components": [{"key", "points", "inputs"?}]}``),
+            whose component points sum to ``points``.
         description (str): A description of the user points.
         userId (str): The ID of the user associated with the points.
         taskId (str): The ID of the task associated with the points.
@@ -38,6 +41,7 @@ class UserPoints(BaseModel, table=True):
     caseName: str = Field(sa_column=Column(String, nullable=True))
     idempotencyKey: str = Field(sa_column=Column(String, nullable=True))
     data: dict = Field(sa_column=Column(JSONB, nullable=True))
+    breakdown: dict = Field(default=None, sa_column=Column(JSONB, nullable=True))
     description: str = Field(sa_column=Column(String, nullable=True))
     userId: str = Field(sa_column=Column(UUID(as_uuid=True), ForeignKey("users.id")))
     taskId: str = Field(sa_column=Column(UUID(as_uuid=True), ForeignKey("tasks.id")))
