@@ -1,6 +1,6 @@
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.core.exceptions import (
     InternalServerError,
@@ -342,6 +342,121 @@ class TestUserPointsService(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(NotFoundError):
             await self.service.get_points_by_gameId("game-1")
+
+    async def test_get_leaderboard_by_game_id_maps_rows(self):
+        self.game_repository.read_by_column.return_value = SimpleNamespace(
+            id="game-1", externalGameId="external-game-1"
+        )
+        self.user_points_repository.get_leaderboard_by_gameId.return_value = (
+            [
+                SimpleNamespace(
+                    rank=1, externalUserId="user_1", points=20, timesAwarded=2
+                ),
+                SimpleNamespace(
+                    rank=1, externalUserId="user_2", points=20, timesAwarded=4
+                ),
+            ],
+            5,
+        )
+
+        result = await self.service.get_leaderboard_by_gameId(
+            "game-1", limit=2, offset=0
+        )
+
+        self.user_points_repository.get_leaderboard_by_gameId.assert_awaited_once_with(
+            "game-1", limit=2, offset=0
+        )
+        self.assertEqual(result.externalGameId, "external-game-1")
+        self.assertEqual(result.totalUsers, 5)
+        self.assertEqual((result.limit, result.offset), (2, 0))
+        self.assertEqual(
+            [(e.rank, e.externalUserId, e.points) for e in result.entries],
+            [(1, "user_1", 20), (1, "user_2", 20)],
+        )
+
+    def _leaderboard_game(self):
+        self.game_repository.read_by_column.return_value = SimpleNamespace(
+            id="game-1", externalGameId="external-game-1"
+        )
+        self.user_points_repository.get_leaderboard_by_gameId.return_value = ([], 0)
+
+    async def test_get_leaderboard_user_is_none_when_not_requested(self):
+        self._leaderboard_game()
+
+        result = await self.service.get_leaderboard_by_gameId("game-1")
+
+        self.assertIsNone(result.user)
+        self.user_points_repository.get_leaderboard_rank_of_user.assert_not_awaited()
+
+    async def test_get_leaderboard_user_rank_kept_up_to_cutoff_inclusive(self):
+        self._leaderboard_game()
+        self.user_points_repository.get_leaderboard_rank_of_user.return_value = (
+            SimpleNamespace(rank=100, externalUserId="u", points=9, timesAwarded=3)
+        )
+
+        result = await self.service.get_leaderboard_by_gameId(
+            "game-1", externalUserId="u"
+        )
+
+        self.user_points_repository.get_leaderboard_rank_of_user.assert_awaited_once_with(
+            "game-1", "u"
+        )
+        self.assertEqual(
+            (result.user.rank, result.user.points, result.user.timesAwarded),
+            (100, 9, 3),
+        )
+
+    async def test_get_leaderboard_user_rank_zero_below_cutoff_keeps_points(self):
+        self._leaderboard_game()
+        self.user_points_repository.get_leaderboard_rank_of_user.return_value = (
+            SimpleNamespace(rank=101, externalUserId="u", points=8, timesAwarded=2)
+        )
+
+        result = await self.service.get_leaderboard_by_gameId(
+            "game-1", externalUserId="u"
+        )
+
+        self.assertEqual((result.user.rank, result.user.points), (0, 8))
+
+    async def test_get_leaderboard_unknown_or_pointless_user_gets_zeros(self):
+        self._leaderboard_game()
+        self.user_points_repository.get_leaderboard_rank_of_user.return_value = None
+
+        result = await self.service.get_leaderboard_by_gameId(
+            "game-1", externalUserId="ghost"
+        )
+
+        self.assertEqual(
+            result.user.model_dump(),
+            {"rank": 0, "externalUserId": "ghost", "points": 0, "timesAwarded": 0},
+        )
+
+    async def test_get_leaderboard_by_game_id_empty_is_not_an_error(self):
+        self.game_repository.read_by_column.return_value = SimpleNamespace(
+            id="game-1", externalGameId="external-game-1"
+        )
+        self.user_points_repository.get_leaderboard_by_gameId.return_value = ([], 0)
+
+        result = await self.service.get_leaderboard_by_gameId("game-1")
+
+        self.assertEqual(result.entries, [])
+        self.assertEqual(result.totalUsers, 0)
+
+    async def test_get_leaderboard_by_game_id_enforces_scope(self):
+        with patch(
+            "app.services.user_points.queries.get_authorized_game",
+            new=AsyncMock(return_value=SimpleNamespace(id="g", externalGameId="e")),
+        ) as authorized:
+            self.user_points_repository.get_leaderboard_by_gameId.return_value = (
+                [],
+                0,
+            )
+            await self.service.get_leaderboard_by_gameId(
+                "g", api_key="k", enforce_scope=True
+            )
+
+        authorized.assert_awaited_once()
+        self.game_repository.read_by_column.assert_not_awaited()
 
     async def test_get_points_by_game_id_returns_points_by_task(self):
         self.game_repository.read_by_column.return_value = SimpleNamespace(

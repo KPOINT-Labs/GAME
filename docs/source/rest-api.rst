@@ -160,6 +160,9 @@ Points & actions (``/games/...``)
      - ``/games/{gameId}/points/details``
      - …with per-award detail.
    * - ``GET``
+     - ``/games/{gameId}/leaderboard``
+     - Users ranked by total points (``limit``/``offset`` paging; optional ``externalUserId`` adds that user's rank).
+   * - ``GET``
      - ``/games/{gameId}/users/{externalUserId}/points``
      - One user's total in a game.
    * - ``GET``

@@ -1,10 +1,10 @@
 import logging
 import traceback
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Body, Depends, Request
+from fastapi import APIRouter, Body, Depends, Query, Request
 
 from app.api.v1.endpoints.games_common import (
     _game_access_kwargs,
@@ -27,6 +27,7 @@ from app.schema.task_schema import (
 from app.schema.user_points_schema import (
     AllPointsByGame,
     AllPointsByGameWithDetails,
+    GameLeaderboard,
     PointsAssignedToUser,
 )
 from app.services.abuse_prevention_service import AbusePreventionService
@@ -309,6 +310,166 @@ async def get_points_by_gameId_with_details(
 
     return await service.get_points_by_gameId_with_details(
         gameId, **_game_access_kwargs(auth.api_key, auth.oauth_user_id, auth.is_admin)
+    )
+
+
+summary_get_leaderboard_by_gameId = "Retrieve Game Leaderboard"
+response_example_get_leaderboard_by_gameId = {
+    "externalGameId": "game-readme-001",
+    "totalUsers": 3,
+    "limit": 10,
+    "offset": 0,
+    "entries": [
+        {"rank": 1, "externalUserId": "user-123", "points": 150, "timesAwarded": 7},
+        {"rank": 2, "externalUserId": "user-456", "points": 40, "timesAwarded": 2},
+        {"rank": 2, "externalUserId": "user-789", "points": 40, "timesAwarded": 4},
+    ],
+    "user": {
+        "rank": 2,
+        "externalUserId": "user-456",
+        "points": 40,
+        "timesAwarded": 2,
+    },
+}
+
+responses_get_leaderboard_by_gameId = {
+    200: {
+        "description": "Leaderboard page retrieved successfully",
+        "content": {
+            "application/json": {"example": response_example_get_leaderboard_by_gameId}
+        },
+    },
+    401: {
+        "description": "Unauthorized: missing/invalid credentials",
+        "content": {
+            "application/json": {
+                "example": {"detail": "Invalid authentication credentials"}
+            }
+        },
+    },
+    403: {
+        "description": "Forbidden: invalid or inactive API key",
+        "content": {
+            "application/json": {
+                "example": {"detail": "API key is invalid or does not exist."}
+            }
+        },
+    },
+    404: {
+        "description": "Game not found for the provided id",
+        "content": {
+            "application/json": {
+                "example": {
+                    "detail": "Game with gameId: 4ce32be2-77f6-4ffc-8e07-78dc220f0521 not found"
+                }
+            }
+        },
+    },
+    422: {
+        "description": "Validation error in path or query parameters",
+    },
+    500: {
+        "description": "Internal server error while retrieving the leaderboard",
+    },
+}
+
+description_get_leaderboard_by_gameId = """
+Returns users ranked by their total points across every task in the game.
+
+### Path Parameter
+- `gameId` (`UUID`, required): Internal game identifier.
+
+### Query Parameters
+- `limit` (`int`, optional, default `10`, `1`-`100`): Page size.
+- `offset` (`int`, optional, default `0`): Number of ranked users to skip.
+- `externalUserId` (`string`, optional): Also return this user's rank in `user`.
+
+### Authentication
+- Requires either `X-API-Key` or `Authorization: Bearer <access_token>`.
+
+### Ranking
+- Users are ordered by total points, highest first.
+- Tied users share a rank and the next rank is skipped (`1, 2, 2, 4`).
+- Ranks are global, so they stay correct on later pages.
+- Users with no points in the game are not listed. A game with no points
+  returns an empty `entries` list, not `404`.
+
+### Requested user (`externalUserId`)
+- `user.rank` is the user's overall rank in the game (not affected by
+  `limit`/`offset`) if it is `100` or better, including ties at 100.
+- A user ranked below 100 gets `rank: 0`, with their real `points`.
+- A user with no points in the game, or who does not exist, gets
+  `rank: 0` and `points: 0`. This is not a `404`.
+- `user` is `null` when `externalUserId` is not sent.
+
+### Success (200)
+Returns:
+- `externalGameId`
+- `totalUsers`: number of ranked users in the game (for pagination)
+- `limit`, `offset`: the page that was returned
+- `entries`: list of `rank`, `externalUserId`, `points`, `timesAwarded`
+- `user`: the requested user's row in the same shape, or `null`
+
+### Error Cases
+- `401`: missing or invalid auth credentials
+- `403`: API key rejected or inactive
+- `404`: no game found with the provided `gameId`
+- `422`: malformed `gameId`, or `limit`/`offset` out of range
+- `500`: retrieval failure
+
+<sub>**Id_endpoint:** `get_leaderboard_by_gameId`</sub>
+"""  # noqa
+
+
+@router.get(
+    "/{gameId}/leaderboard",
+    response_model=GameLeaderboard,
+    summary=summary_get_leaderboard_by_gameId,
+    description=description_get_leaderboard_by_gameId,
+    responses=responses_get_leaderboard_by_gameId,
+    dependencies=[Depends(auth_api_key_or_oauth2)],
+)
+@inject
+async def get_leaderboard_by_gameId(
+    gameId: UUID,
+    limit: int = Query(10, ge=1, le=100, description="Page size (1-100)."),
+    offset: int = Query(0, ge=0, description="Number of ranked users to skip."),
+    externalUserId: Optional[str] = Query(
+        None, description="Also return this user's rank in `user`."
+    ),
+    service: UserPointsService = Depends(Provide[Container.user_points_service]),
+    audit: AuditLogger = Depends(audit_log("game")),
+):
+    """
+    Retrieve a page of a game's leaderboard.
+
+    Args:
+        gameId (UUID): The ID of the game.
+        limit (int): Page size.
+        offset (int): Number of ranked users to skip.
+        externalUserId (Optional[str]): User whose rank to include.
+        service (UserPointsService): Injected UserPointsService dependency.
+        audit (AuditLogger): Per-request audit logger bound to the auth context.
+
+    Returns:
+        GameLeaderboard: Ranked users for the requested page.
+    """
+    auth = audit.auth
+    await audit.info(
+        "Leaderboard retrieval by game ID",
+        {
+            "gameId": str(gameId),
+            "limit": limit,
+            "offset": offset,
+            "externalUserId": externalUserId,
+        },
+    )
+    return await service.get_leaderboard_by_gameId(
+        gameId,
+        limit=limit,
+        offset=offset,
+        externalUserId=externalUserId,
+        **_game_access_kwargs(auth.api_key, auth.oauth_user_id, auth.is_admin),
     )
 
 
