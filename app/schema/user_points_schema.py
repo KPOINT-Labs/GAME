@@ -261,6 +261,9 @@ class GameLeaderboard(BaseModel):
         limit (int): Page size requested.
         offset (int): Number of ranked users skipped.
         entries (List[LeaderboardEntry]): Ranked users for this page.
+        user (Optional[LeaderboardEntry]): The requested user's row, when
+            ``externalUserId`` was sent. ``rank`` is 0 if the user is ranked
+            below 100 or has no points.
     """
 
     externalGameId: str = Field(
@@ -277,6 +280,15 @@ class GameLeaderboard(BaseModel):
     )
     entries: List[LeaderboardEntry] = Field(
         ..., description="Ranked users for this page, highest points first."
+    )
+    user: Optional[LeaderboardEntry] = Field(
+        default=None,
+        description=(
+            "The requested user's row when `externalUserId` is sent, otherwise "
+            "null. `rank` is the user's overall rank if it is 100 or better, "
+            "else 0. A user with no points in the game, or who does not exist, "
+            "gets rank 0 and points 0."
+        ),
     )
 
 

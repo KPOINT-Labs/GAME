@@ -43,6 +43,11 @@ def _group_points_by_task(rows):
     return grouped
 
 
+# A requested user's rank is only reported when it is at or above this
+# position; anyone ranked lower (or unranked) is reported as rank 0.
+LEADERBOARD_USER_RANK_CUTOFF = 100
+
+
 class PointsQueryMixin(UserPointsContext):
     async def query_user_points(self, schema) -> Any:
         """
@@ -280,6 +285,7 @@ class PointsQueryMixin(UserPointsContext):
         *,
         limit: int = 10,
         offset: int = 0,
+        externalUserId: str | None = None,
         api_key: str = None,
         oauth_user_id: str = None,
         is_admin: bool = False,
@@ -291,10 +297,17 @@ class PointsQueryMixin(UserPointsContext):
         Unlike :meth:`get_points_by_gameId`, a game with no tasks or no points
         is not an error: it simply has an empty leaderboard.
 
+        When ``externalUserId`` is given, the response also carries that
+        user's row in ``user``. Its ``rank`` is the user's global rank if it is
+        within :data:`LEADERBOARD_USER_RANK_CUTOFF`, otherwise ``0``. A user
+        with no points in the game, or who does not exist, gets ``rank`` 0
+        and ``points`` 0.
+
         Args:
             gameId: Internal game identifier.
             limit (int): Page size.
             offset (int): Number of ranked users to skip.
+            externalUserId (str | None): User whose rank to include.
             api_key (str): Caller's API key, used when ``enforce_scope``.
             oauth_user_id (str): Caller's OAuth subject, used when scoping.
             is_admin (bool): Whether the caller has the admin role.
@@ -321,6 +334,26 @@ class PointsQueryMixin(UserPointsContext):
         rows, total_users = await self.user_points_repository.get_leaderboard_by_gameId(
             game.id, limit=limit, offset=offset
         )
+        user_entry = None
+        if externalUserId is not None:
+            user_row = await self.user_points_repository.get_leaderboard_rank_of_user(
+                game.id, externalUserId
+            )
+            if user_row is None:
+                user_entry = LeaderboardEntry(
+                    rank=0, externalUserId=externalUserId, points=0, timesAwarded=0
+                )
+            else:
+                user_entry = LeaderboardEntry(
+                    rank=(
+                        user_row.rank
+                        if user_row.rank <= LEADERBOARD_USER_RANK_CUTOFF
+                        else 0
+                    ),
+                    externalUserId=user_row.externalUserId,
+                    points=user_row.points,
+                    timesAwarded=user_row.timesAwarded,
+                )
         return GameLeaderboard(
             externalGameId=game.externalGameId,
             totalUsers=total_users,
@@ -335,6 +368,7 @@ class PointsQueryMixin(UserPointsContext):
                 )
                 for row in rows
             ],
+            user=user_entry,
         )
 
     async def get_points_by_gameId(

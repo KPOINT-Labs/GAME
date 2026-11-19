@@ -1,6 +1,6 @@
 import logging
 import traceback
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 from dependency_injector.wiring import Provide, inject
@@ -324,6 +324,12 @@ response_example_get_leaderboard_by_gameId = {
         {"rank": 2, "externalUserId": "user-456", "points": 40, "timesAwarded": 2},
         {"rank": 2, "externalUserId": "user-789", "points": 40, "timesAwarded": 4},
     ],
+    "user": {
+        "rank": 2,
+        "externalUserId": "user-456",
+        "points": 40,
+        "timesAwarded": 2,
+    },
 }
 
 responses_get_leaderboard_by_gameId = {
@@ -376,6 +382,7 @@ Returns users ranked by their total points across every task in the game.
 ### Query Parameters
 - `limit` (`int`, optional, default `10`, `1`-`100`): Page size.
 - `offset` (`int`, optional, default `0`): Number of ranked users to skip.
+- `externalUserId` (`string`, optional): Also return this user's rank in `user`.
 
 ### Authentication
 - Requires either `X-API-Key` or `Authorization: Bearer <access_token>`.
@@ -387,12 +394,21 @@ Returns users ranked by their total points across every task in the game.
 - Users with no points in the game are not listed. A game with no points
   returns an empty `entries` list, not `404`.
 
+### Requested user (`externalUserId`)
+- `user.rank` is the user's overall rank in the game (not affected by
+  `limit`/`offset`) if it is `100` or better, including ties at 100.
+- A user ranked below 100 gets `rank: 0`, with their real `points`.
+- A user with no points in the game, or who does not exist, gets
+  `rank: 0` and `points: 0`. This is not a `404`.
+- `user` is `null` when `externalUserId` is not sent.
+
 ### Success (200)
 Returns:
 - `externalGameId`
 - `totalUsers`: number of ranked users in the game (for pagination)
 - `limit`, `offset`: the page that was returned
 - `entries`: list of `rank`, `externalUserId`, `points`, `timesAwarded`
+- `user`: the requested user's row in the same shape, or `null`
 
 ### Error Cases
 - `401`: missing or invalid auth credentials
@@ -418,6 +434,9 @@ async def get_leaderboard_by_gameId(
     gameId: UUID,
     limit: int = Query(10, ge=1, le=100, description="Page size (1-100)."),
     offset: int = Query(0, ge=0, description="Number of ranked users to skip."),
+    externalUserId: Optional[str] = Query(
+        None, description="Also return this user's rank in `user`."
+    ),
     service: UserPointsService = Depends(Provide[Container.user_points_service]),
     audit: AuditLogger = Depends(audit_log("game")),
 ):
@@ -428,6 +447,7 @@ async def get_leaderboard_by_gameId(
         gameId (UUID): The ID of the game.
         limit (int): Page size.
         offset (int): Number of ranked users to skip.
+        externalUserId (Optional[str]): User whose rank to include.
         service (UserPointsService): Injected UserPointsService dependency.
         audit (AuditLogger): Per-request audit logger bound to the auth context.
 
@@ -437,12 +457,18 @@ async def get_leaderboard_by_gameId(
     auth = audit.auth
     await audit.info(
         "Leaderboard retrieval by game ID",
-        {"gameId": str(gameId), "limit": limit, "offset": offset},
+        {
+            "gameId": str(gameId),
+            "limit": limit,
+            "offset": offset,
+            "externalUserId": externalUserId,
+        },
     )
     return await service.get_leaderboard_by_gameId(
         gameId,
         limit=limit,
         offset=offset,
+        externalUserId=externalUserId,
         **_game_access_kwargs(auth.api_key, auth.oauth_user_id, auth.is_admin),
     )
 

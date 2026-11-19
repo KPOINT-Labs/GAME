@@ -581,6 +581,7 @@ class TestGamesEndpoints(unittest.IsolatedAsyncioTestCase):
             gameId=game_id,
             limit=5,
             offset=10,
+            externalUserId="user-9",
             service=service,
             audit=self._audit(api_key="api-key-1", oauth_user_id="oauth-user-1"),
         )
@@ -591,6 +592,7 @@ class TestGamesEndpoints(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(args, (game_id,))
         self.assertEqual(kwargs["limit"], 5)
         self.assertEqual(kwargs["offset"], 10)
+        self.assertEqual(kwargs["externalUserId"], "user-9")
         self.assertEqual(kwargs["api_key"], "api-key-1")
         self.assertTrue(kwargs["enforce_scope"])
 

@@ -455,3 +455,29 @@ async def test_get_leaderboard_empty_for_game_without_points(repository, db_sess
 
     assert rows == []
     assert total == 0
+
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_rank_of_user_returns_global_tied_rank(
+    repository, db_session
+):
+    game = await _seed_leaderboard(db_session)
+
+    bob = await repository.get_leaderboard_rank_of_user(game.id, "bob")
+    carol = await repository.get_leaderboard_rank_of_user(game.id, "carol")
+
+    # Rank is computed over all users before filtering, so the filter on
+    # one user does not turn every lookup into rank 1.
+    assert (bob.rank, bob.points, bob.timesAwarded) == (1, 15, 1)
+    assert (carol.rank, carol.points, carol.timesAwarded) == (3, 7, 2)
+
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_rank_of_user_none_without_points_in_game(
+    repository, db_session
+):
+    game = await _seed_leaderboard(db_session)
+
+    # dave only has points in another game; "nobody" does not exist.
+    assert await repository.get_leaderboard_rank_of_user(game.id, "dave") is None
+    assert await repository.get_leaderboard_rank_of_user(game.id, "nobody") is None

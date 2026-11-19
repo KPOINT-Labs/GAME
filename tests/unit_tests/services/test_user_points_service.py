@@ -374,6 +374,63 @@ class TestUserPointsService(unittest.IsolatedAsyncioTestCase):
             [(1, "user_1", 20), (1, "user_2", 20)],
         )
 
+    def _leaderboard_game(self):
+        self.game_repository.read_by_column.return_value = SimpleNamespace(
+            id="game-1", externalGameId="external-game-1"
+        )
+        self.user_points_repository.get_leaderboard_by_gameId.return_value = ([], 0)
+
+    async def test_get_leaderboard_user_is_none_when_not_requested(self):
+        self._leaderboard_game()
+
+        result = await self.service.get_leaderboard_by_gameId("game-1")
+
+        self.assertIsNone(result.user)
+        self.user_points_repository.get_leaderboard_rank_of_user.assert_not_awaited()
+
+    async def test_get_leaderboard_user_rank_kept_up_to_cutoff_inclusive(self):
+        self._leaderboard_game()
+        self.user_points_repository.get_leaderboard_rank_of_user.return_value = (
+            SimpleNamespace(rank=100, externalUserId="u", points=9, timesAwarded=3)
+        )
+
+        result = await self.service.get_leaderboard_by_gameId(
+            "game-1", externalUserId="u"
+        )
+
+        self.user_points_repository.get_leaderboard_rank_of_user.assert_awaited_once_with(
+            "game-1", "u"
+        )
+        self.assertEqual(
+            (result.user.rank, result.user.points, result.user.timesAwarded),
+            (100, 9, 3),
+        )
+
+    async def test_get_leaderboard_user_rank_zero_below_cutoff_keeps_points(self):
+        self._leaderboard_game()
+        self.user_points_repository.get_leaderboard_rank_of_user.return_value = (
+            SimpleNamespace(rank=101, externalUserId="u", points=8, timesAwarded=2)
+        )
+
+        result = await self.service.get_leaderboard_by_gameId(
+            "game-1", externalUserId="u"
+        )
+
+        self.assertEqual((result.user.rank, result.user.points), (0, 8))
+
+    async def test_get_leaderboard_unknown_or_pointless_user_gets_zeros(self):
+        self._leaderboard_game()
+        self.user_points_repository.get_leaderboard_rank_of_user.return_value = None
+
+        result = await self.service.get_leaderboard_by_gameId(
+            "game-1", externalUserId="ghost"
+        )
+
+        self.assertEqual(
+            result.user.model_dump(),
+            {"rank": 0, "externalUserId": "ghost", "points": 0, "timesAwarded": 0},
+        )
+
     async def test_get_leaderboard_by_game_id_empty_is_not_an_error(self):
         self.game_repository.read_by_column.return_value = SimpleNamespace(
             id="game-1", externalGameId="external-game-1"
