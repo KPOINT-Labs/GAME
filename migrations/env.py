@@ -14,6 +14,7 @@ from app.core.database import _to_async_url
 from app.model.abuse_limit_counter import AbuseLimitCounter  # noqa: F401
 from app.model.api_key import ApiKey  # noqa: F401
 from app.model.api_requests import ApiRequests  # noqa: F401
+from app.model.cohorts import UserGameCohort, UserPointsCohort  # noqa: F401
 from app.model.game_params import GamesParams  # noqa: F401
 from app.model.games import Games  # noqa: F401
 from app.model.kpi_metrics import KpiMetrics  # noqa: F401

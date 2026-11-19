@@ -7,6 +7,7 @@ those collaborators here lets each mixin type-check ``self.<collaborator>``
 accesses without depending on the others.
 """
 
+from app.repository.cohort_repository import CohortRepository
 from app.repository.game_params_repository import GameParamsRepository
 from app.repository.game_repository import GameRepository
 from app.repository.task_repository import TaskRepository
@@ -38,3 +39,4 @@ class UserPointsContext:
     wallet_repository: WalletRepository
     wallet_transaction_repository: WalletTransactionRepository
     strategy_service: StrategyService
+    cohort_repository: CohortRepository | None

@@ -206,6 +206,8 @@ GAME exposes aggregates at every granularity:
      - ``GET /games/{gameId}/leaderboard?limit=10&offset=0``
    * - Users ranked by points in one task
      - ``GET /games/{gameId}/tasks/{externalTaskId}/leaderboard``
+   * - Either leaderboard, within one cohort
+     - add ``?cohort=school-12`` (cohorts are set by sending ``cohorts`` on a user action)
    * - One user's total in a game
      - ``GET /games/{gameId}/users/{externalUserId}/points``
    * - All users' points in a task

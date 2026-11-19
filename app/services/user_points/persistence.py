@@ -53,6 +53,29 @@ class PointsPersistenceMixin(UserPointsContext):
                 return value.strip()
         return None
 
+    async def _attach_cohorts(
+        self, session, *, user_points, user_id, game_id, cohorts, api_key
+    ) -> None:
+        """
+        Tag a new points row with cohorts inside the caller's transaction.
+
+        Uses ``cohorts`` when given, otherwise snapshots the user's current
+        cohorts in the game. Does nothing without a cohort repository or a
+        game (for example in legacy callers and positional test setups).
+        """
+        if self.cohort_repository is None:
+            return
+        if cohorts is None:
+            if game_id is None:
+                return
+            cohorts = await self.cohort_repository.get_user_game_cohorts(
+                user_id, game_id, session=session
+            )
+        if cohorts:
+            await self.cohort_repository.add_points_cohorts(
+                user_points.id, cohorts, session=session, api_key=api_key
+            )
+
     async def _persist_points_wallet_and_transaction(
         self,
         *,
@@ -67,6 +90,8 @@ class PointsPersistenceMixin(UserPointsContext):
         external_task_id: str,
         idempotency_key: str = None,
         breakdown: dict = None,
+        game_id=None,
+        cohorts: list[str] | None = None,
     ) -> tuple[Any, Any, Any]:
         """
         Persists points assignment, wallet increment and wallet transaction in
@@ -74,6 +99,11 @@ class PointsPersistenceMixin(UserPointsContext):
 
         ``breakdown`` (optional) is stored on the points row only; it is not
         copied into ``data`` or the wallet transaction.
+
+        Cohort tags are attached to the points row in the same transaction:
+        ``cohorts`` when given (``[]`` means none), otherwise the user's
+        current cohorts in ``game_id``. An idempotent replay returns the
+        existing row and does not re-tag it.
         """
         async with self.user_points_repository.session_factory() as session:
             try:
@@ -102,6 +132,14 @@ class PointsPersistenceMixin(UserPointsContext):
                     user_points_schema,
                     session=session,
                     auto_commit=False,
+                )
+                await self._attach_cohorts(
+                    session,
+                    user_points=user_points,
+                    user_id=user_id,
+                    game_id=game_id,
+                    cohorts=cohorts,
+                    api_key=api_key,
                 )
 
                 wallet = await self.wallet_repository.upsert_points_balance(

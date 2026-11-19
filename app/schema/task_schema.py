@@ -9,6 +9,7 @@ from app.schema.base_schema import (
     SearchOptions,
     SuccesfullyCreated,
 )
+from app.schema.cohort_schema import CohortList
 from app.schema.games_params_schema import CreateGameParams
 from app.schema.strategy_schema import Strategy
 from app.schema.tasks_params_schema import CreateTaskParams, UpdateTaskParams
@@ -44,6 +45,8 @@ class AsignPointsToExternalUserId(BaseModel):
         externalUserId (str): External user identifier.
         data (Optional[dict]): Additional metadata consumed by scoring logic.
         isSimulated (Optional[bool]): Whether to run assignment in simulation mode.
+        cohorts (Optional[List[str]]): Cohorts to record on this award instead
+          of the user's current cohorts in the game.
     """
 
     externalUserId: str = Field(
@@ -60,6 +63,16 @@ class AsignPointsToExternalUserId(BaseModel):
         default=False,
         description="If true, executes simulation logic when available.",
         examples=[False],
+    )
+    cohorts: Optional[CohortList] = Field(
+        default=None,
+        description=(
+            "Cohort tags to record on this award. When omitted, the award gets "
+            "the user's current cohorts in the game (set by user actions); an "
+            "empty list records no cohorts. Up to 10 tags of 1-64 characters "
+            "from `A-Z a-z 0-9 _ . : -`."
+        ),
+        examples=[["school-12", "grade-7"]],
     )
 
 
@@ -447,6 +460,8 @@ class AddActionDidByUserInTask(BaseModel):
         description (str): Human-readable explanation of the event.
         externalUserId (str): External identifier of the user who triggered
           the action.
+        cohorts (Optional[List[str]]): When sent, replaces the user's
+          current cohorts in this game.
     """
 
     typeAction: str = Field(
@@ -468,6 +483,16 @@ class AddActionDidByUserInTask(BaseModel):
         ...,
         description="External user identifier that triggered the action.",
         examples=["user-123"],
+    )
+    cohorts: Optional[CohortList] = Field(
+        default=None,
+        description=(
+            "When sent, replaces the user's current cohorts in this game; later "
+            "points awards are tagged with them. Omit to leave the cohorts "
+            "unchanged; send `[]` to clear them. Up to 10 tags of 1-64 "
+            "characters from `A-Z a-z 0-9 _ . : -`."
+        ),
+        examples=[["school-12", "grade-7"]],
     )
 
     def example():

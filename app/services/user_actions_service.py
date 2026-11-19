@@ -1,4 +1,5 @@
 from app.core.exceptions import GoneError, NotFoundError
+from app.repository.cohort_repository import CohortRepository
 from app.repository.game_repository import GameRepository
 from app.repository.task_repository import TaskRepository
 from app.repository.user_actions_repository import UserActionsRepository
@@ -38,6 +39,7 @@ class UserActionsService(BaseService):
         users_repository: UserRepository,
         game_repository: GameRepository,
         task_repository: TaskRepository,
+        cohort_repository: CohortRepository | None = None,
     ) -> None:
         """
         Initializes the UserPointsService with the provided repositories and
@@ -48,11 +50,15 @@ class UserActionsService(BaseService):
             users_repository: The user repository instance.
             game_repository: The game repository instance.
             task_repository: The task repository instance.
+            cohort_repository: Stores the user's cohorts per game. Optional
+              so positional test setups keep working; the DI container always
+              injects it.
         """
         self.user_actions_repository = user_actions_repository
         self.users_repository = users_repository
         self.game_repository = game_repository
         self.task_repository = task_repository
+        self.cohort_repository = cohort_repository
         super().__init__(user_actions_repository)
 
     async def user_add_action_in_task(
@@ -77,6 +83,10 @@ class UserActionsService(BaseService):
 
         Returns:
             object: The added action in task for user.
+
+        When ``action.cohorts`` is sent, it replaces the user's current cohorts
+        in the game (``[]`` clears them); later points awards in the game are
+        tagged with them.
 
         Raises:
             NotFoundError: If the user or task is not found.
@@ -114,6 +124,11 @@ class UserActionsService(BaseService):
         )
 
         created_action = await self.user_actions_repository.create(new_action)
+        cohorts = getattr(action, "cohorts", None)
+        if cohorts is not None and self.cohort_repository is not None:
+            await self.cohort_repository.replace_user_game_cohorts(
+                user.id, task.gameId, cohorts, api_key=api_key
+            )
         response = ResponseAddActionDidByUserInTask(
             **created_action.model_dump(),
             externalUserId=str(action.externalUserId),

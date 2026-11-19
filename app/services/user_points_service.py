@@ -14,6 +14,7 @@ DI-injected class that endpoints and strategy engines depend on:
 
 import logging
 
+from app.repository.cohort_repository import CohortRepository
 from app.repository.game_params_repository import GameParamsRepository
 from app.repository.game_repository import GameRepository
 from app.repository.task_repository import TaskRepository
@@ -50,6 +51,7 @@ class UserPointsService(
         wallet_transaction_repository: WalletTransactionRepository,
         strategy_service: "StrategyService | None" = None,
         game_params_repository: GameParamsRepository | None = None,
+        cohort_repository: CohortRepository | None = None,
     ) -> None:
         self.user_points_repository = user_points_repository
         self.users_repository = users_repository
@@ -61,6 +63,9 @@ class UserPointsService(
         self.task_repository = task_repository
         self.wallet_repository = wallet_repository
         self.wallet_transaction_repository = wallet_transaction_repository
+        # Optional for the same backward-compat reason: without it, awards are
+        # written without cohort tags. The DI container always injects it.
+        self.cohort_repository = cohort_repository
         # When constructed via DI (the production path) the container
         # injects a fully-wired StrategyService that can resolve
         # ``custom:<uuid>`` ids against the DB. The no-arg fallback
