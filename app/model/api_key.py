@@ -4,7 +4,7 @@ from typing import Optional
 from uuid import uuid4
 
 from pydantic import ConfigDict
-from sqlalchemy import Boolean
+from sqlalchemy import Boolean, Index, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlmodel import Column, DateTime, Field, ForeignKey, SQLModel, String, func
 
@@ -43,8 +43,17 @@ class ApiKey(SQLModel, table=True):
             DateTime(timezone=True), default=func.now(), onupdate=func.now()
         )
     )
-    apiKey: str = Field(sa_column=Column(String, unique=True, index=True))
-    apiKeyHash: str = Field(sa_column=Column(String, unique=True, index=True))
+    # Constraint and index names match the database (see the apikey hashing
+    # migration 3a7e5c1b9d2f), so autogenerate does not try to rebuild them.
+    __table_args__ = (
+        UniqueConstraint("apiKey", name="apikey_apiKey_key"),
+        Index("ix_apikey_apiKey_prefix", "apiKey"),
+        UniqueConstraint("apiKeyHash", name="uq_apikey_apiKeyHash"),
+        Index("ix_apikey_apiKeyHash", "apiKeyHash"),
+    )
+
+    apiKey: str = Field(sa_column=Column(String))
+    apiKeyHash: str = Field(sa_column=Column(String, nullable=False))
     client: str = Field(sa_column=Column(String))
     description: str = Field(sa_column=Column(String, nullable=True))
     active: bool = Field(sa_column=Column(Boolean, default=True))

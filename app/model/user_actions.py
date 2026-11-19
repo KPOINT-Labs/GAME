@@ -1,8 +1,9 @@
 from pydantic import ConfigDict
+from sqlalchemy import Index
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlmodel import Column, Field, ForeignKey, String
 
-from app.model.base_model import BaseModel
+from app.model.base_model import BaseModel, audit_foreign_keys
 
 
 class UserActions(BaseModel, table=True):
@@ -16,6 +17,11 @@ class UserActions(BaseModel, table=True):
         description (str): A description of the user action.
         userId (str): The ID of the user associated with the action.
     """
+
+    __table_args__ = (
+        *audit_foreign_keys(api_key=True),
+        Index("ix_useractions_user_created_at", "userId", "created_at"),
+    )
 
     typeAction: str = Field(sa_column=Column(String, nullable=True))
     data: dict = Field(sa_column=Column(JSONB, nullable=True))

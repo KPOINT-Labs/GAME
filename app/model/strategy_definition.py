@@ -23,7 +23,7 @@ from sqlalchemy import UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Column, DateTime, Field, Integer, String, Text
 
-from app.model.base_model import BaseModel
+from app.model.base_model import BaseModel, audit_foreign_keys
 
 
 class StrategyDefinitionType(str, Enum):
@@ -69,6 +69,7 @@ class StrategyDefinition(BaseModel, table=True):
     """
 
     __table_args__ = (
+        *audit_foreign_keys(api_key=True, oauth_user=True),
         UniqueConstraint(
             "realmId",
             "name",

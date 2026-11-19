@@ -1,7 +1,7 @@
 from pydantic import ConfigDict
 from sqlmodel import Column, Field, ForeignKey, String
 
-from app.model.base_model import BaseModel
+from app.model.base_model import BaseModel, audit_foreign_keys
 
 
 class Games(BaseModel, table=True):
@@ -31,9 +31,13 @@ class Games(BaseModel, table=True):
         orm_mode (bool): Enables ORM mode for Pydantic models.
     """
 
+    __table_args__ = (*audit_foreign_keys(api_key=True),)
+
     externalGameId: str = Field(sa_column=Column(String, unique=True))
-    strategyId: str = Field(sa_column=Column(String, nullable=False, default="default"))
-    platform: str = Field(sa_column=Column(String, nullable=False))
+    # Nullable in the database (never tightened by a migration); the API
+    # schemas still require/default them, so new rows always have values.
+    strategyId: str = Field(sa_column=Column(String, nullable=True, default="default"))
+    platform: str = Field(sa_column=Column(String, nullable=True))
     apiKey_used: str = Field(
         sa_column=Column(String, ForeignKey("apikey.apiKey"), nullable=True)
     )

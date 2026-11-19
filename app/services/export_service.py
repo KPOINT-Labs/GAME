@@ -325,9 +325,8 @@ class ExportService(BaseService):
         Yields:
             Dict[str, Any]: One serializable interaction record per row.
         """
-        # Backed by the ``useractions`` table (model: UserActions). The legacy
-        # ``UserInteractions`` model has no corresponding table, so any query
-        # against it raises UndefinedTableError at runtime.
+        # Backed by the ``useractions`` table (model: UserActions). There is
+        # no separate interactions table.
         # externalGameId/externalTaskId filters don't apply here: UserActions
         # has no FK to tasks/games (related IDs, when present, live in the
         # JSONB ``data`` column). We keep them in the endpoint signature for

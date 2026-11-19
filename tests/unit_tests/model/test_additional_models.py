@@ -8,7 +8,6 @@ from app.model.kpi_metrics import KpiMetrics
 from app.model.oauth_users import OAuthUsers
 from app.model.uptime_logs import UptimeLogs
 from app.model.user_game_config import UserGameConfig
-from app.model.user_interactions import UserInteractions
 
 
 def _api_key():
@@ -96,18 +95,6 @@ def _user_game_config():
         gameId=str(uuid4()),
         experimentGroup="A",
         configData={"difficulty": "normal"},
-    )
-
-
-def _user_interaction():
-    return UserInteractions(
-        id=str(uuid4()),
-        created_at=datetime.now(),
-        updated_at=datetime.now(),
-        userId=str(uuid4()),
-        taskId=str(uuid4()),
-        interactionType="task",
-        interactionDetail="completed",
     )
 
 
@@ -249,16 +236,4 @@ def test_user_game_config_str_repr_and_eq():
 
     assert "UserGameConfig: (id=" in str(model)
     assert "UserGameConfig: (id=" in repr(model)
-    assert model == model_copy
-
-
-def test_user_interactions_str_repr_and_eq():
-    model = _user_interaction()
-    model_copy = _user_interaction()
-    model_copy.userId = model.userId
-    model_copy.interactionType = model.interactionType
-    model_copy.interactionDetail = model.interactionDetail
-
-    assert "UserInteractions: (id=" in str(model)
-    assert repr(model) == str(model)
     assert model == model_copy

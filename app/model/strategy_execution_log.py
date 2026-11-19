@@ -14,11 +14,11 @@ The trace itself is the same dict the interpreter already builds via
 from typing import Optional
 
 from pydantic import ConfigDict
-from sqlalchemy import Boolean
+from sqlalchemy import Boolean, Index
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Column, Field, Integer, Numeric, String, Text
 
-from app.model.base_model import BaseModel
+from app.model.base_model import BaseModel, audit_foreign_keys
 
 
 class StrategyExecutionLog(BaseModel, table=True):
@@ -57,6 +57,16 @@ class StrategyExecutionLog(BaseModel, table=True):
         parentStrategyId (str): For ``DSL_EXTEND`` runs, the built-in
           strategy id wrapped. Nullable for ``DSL_FULL``.
     """
+
+    __table_args__ = (
+        *audit_foreign_keys(api_key=True, oauth_user=True),
+        Index(
+            "ix_strategyexecutionlog_strategy_status_created",
+            "strategyId",
+            "status",
+            "created_at",
+        ),
+    )
 
     strategyId: str = Field(sa_column=Column(String, nullable=False, index=True))
     strategyVersion: int = Field(sa_column=Column(Integer, nullable=False))

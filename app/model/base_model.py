@@ -3,6 +3,7 @@ from typing import Optional
 from uuid import uuid4
 
 from pydantic import ConfigDict
+from sqlalchemy import ForeignKeyConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlmodel import DateTime, Field, SQLModel, func
 
@@ -14,6 +15,54 @@ def _utcnow() -> datetime:
     migration created the columns without a default), so relying on them alone
     left ``created_at``/``updated_at`` NULL on every insert."""
     return datetime.now(timezone.utc)
+
+
+def created_at_field(nullable: bool = True):
+    """``created_at`` column: UTC timestamp defaulted on insert."""
+    return Field(
+        default_factory=_utcnow,
+        sa_type=DateTime(timezone=True),
+        sa_column_kwargs={"server_default": func.now()},
+        nullable=nullable,
+    )
+
+
+def updated_at_field(nullable: bool = True):
+    """``updated_at`` column: UTC timestamp defaulted on insert and update."""
+    return Field(
+        default_factory=_utcnow,
+        sa_type=DateTime(timezone=True),
+        sa_column_kwargs={"server_default": func.now(), "onupdate": func.now()},
+        nullable=nullable,
+    )
+
+
+def audit_foreign_keys(*, api_key: bool = False, oauth_user: bool = False) -> tuple:
+    """
+    Foreign keys for the ``apiKey_used`` / ``oauth_user_id`` audit columns.
+
+    Only some tables have these constraints in the database, so each model
+    opts in to exactly the ones its table has, in ``__table_args__``.
+    ``oauth_user_id`` in particular is left unconstrained on the older
+    tables: the app writes the caller's token subject there without creating
+    an ``oauthusers`` row first.
+
+    Args:
+        api_key (bool): Add ``apiKey_used -> apikey.apiKey``.
+        oauth_user (bool): Add ``oauth_user_id -> oauthusers.provider_user_id``.
+
+    Returns:
+        tuple: ``ForeignKeyConstraint`` objects to splice into
+        ``__table_args__``.
+    """
+    constraints = []
+    if api_key:
+        constraints.append(ForeignKeyConstraint(["apiKey_used"], ["apikey.apiKey"]))
+    if oauth_user:
+        constraints.append(
+            ForeignKeyConstraint(["oauth_user_id"], ["oauthusers.provider_user_id"])
+        )
+    return tuple(constraints)
 
 
 class BaseModel(SQLModel):
@@ -48,30 +97,17 @@ class BaseModel(SQLModel):
         sa_type=UUID(as_uuid=True),
         sa_column_kwargs={"primary_key": True, "index": True},
     )
-    created_at: datetime = Field(
-        default_factory=_utcnow,
-        sa_type=DateTime(timezone=True),
-        sa_column_kwargs={"server_default": func.now()},
-    )
-    updated_at: datetime = Field(
-        default_factory=_utcnow,
-        sa_type=DateTime(timezone=True),
-        sa_column_kwargs={
-            "server_default": func.now(),
-            "onupdate": func.now(),
-        },
-    )
-    apiKey_used: Optional[str] = Field(
-        default=None,
-        foreign_key="apikey.apiKey",
-        nullable=True,
-    )
-
-    oauth_user_id: Optional[str] = Field(
-        default=None,
-        foreign_key="oauthusers.provider_user_id",
-        nullable=True,
-    )
+    # Nullable to match the database: most tables were created with nullable
+    # audit columns, and rows written before ``_utcnow`` was added can hold
+    # NULL. Tables whose columns really are NOT NULL redeclare them with
+    # ``created_at_field(nullable=False)`` / ``updated_at_field(...)``.
+    created_at: datetime = created_at_field()
+    updated_at: datetime = updated_at_field()
+    # No foreign keys here: only some tables have them in the database (see
+    # ``audit_foreign_keys``). Declaring them for every table made Alembic
+    # autogenerate propose foreign keys that would reject existing writes.
+    apiKey_used: Optional[str] = Field(default=None, nullable=True)
+    oauth_user_id: Optional[str] = Field(default=None, nullable=True)
 
     model_config = ConfigDict(from_attributes=True)
 

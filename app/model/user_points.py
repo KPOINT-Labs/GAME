@@ -3,7 +3,7 @@ from sqlalchemy import Index, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlmodel import Column, Field, ForeignKey, Integer, String
 
-from app.model.base_model import BaseModel
+from app.model.base_model import BaseModel, audit_foreign_keys
 
 
 class UserPoints(BaseModel, table=True):
@@ -23,6 +23,7 @@ class UserPoints(BaseModel, table=True):
     """
 
     __table_args__ = (
+        *audit_foreign_keys(api_key=True),
         UniqueConstraint(
             "userId",
             "taskId",

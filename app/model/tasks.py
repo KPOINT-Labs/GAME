@@ -1,8 +1,9 @@
 from pydantic import ConfigDict
+from sqlalchemy import Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlmodel import Column, Field, ForeignKey, String
 
-from app.model.base_model import BaseModel
+from app.model.base_model import BaseModel, audit_foreign_keys
 
 
 class Tasks(BaseModel, table=True):
@@ -22,6 +23,11 @@ class Tasks(BaseModel, table=True):
         status (str): Lifecycle status of the task; defaults to ``open``.
         apiKey_used (str): The API key that created the task (audit + scope).
     """
+
+    __table_args__ = (
+        *audit_foreign_keys(api_key=True),
+        Index("ix_tasks_game_external_task", "gameId", "externalTaskId"),
+    )
 
     externalTaskId: str = Field(sa_column=Column(String, nullable=False))
     gameId: str = Field(sa_column=Column(UUID(as_uuid=True), ForeignKey("games.id")))

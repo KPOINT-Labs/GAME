@@ -48,6 +48,16 @@ jobs:
       - name: Run tests with coverage
         run: |
           poetry run pytest --cov=app --cov-report=xml --cov-fail-under=93 -m "not e2e_real_http"
+      - name: Check migrations match the models
+        # Builds the schema from the migrations in the Postgres service, then
+        # fails if the models differ from it (what `alembic revision
+        # --autogenerate` would otherwise turn into a migration). Runs after
+        # the tests so they still start from an empty database.
+        env:
+          ALEMBIC_DATABASE_URL: postgresql://test:test@localhost:5432/test_game_dev_db
+        run: |
+          poetry run alembic upgrade head
+          poetry run alembic check
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
         with:

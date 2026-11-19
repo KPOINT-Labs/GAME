@@ -1,8 +1,9 @@
 from pydantic import ConfigDict
+from sqlalchemy import Index
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Column, Field, Integer, String
 
-from app.model.base_model import BaseModel
+from app.model.base_model import BaseModel, audit_foreign_keys
 
 
 class ExportAuditLog(BaseModel, table=True):
@@ -25,6 +26,11 @@ class ExportAuditLog(BaseModel, table=True):
         requestedBy (str): Best-effort identifier for who triggered it
           (oauth sub or api key prefix).
     """
+
+    __table_args__ = (
+        *audit_foreign_keys(api_key=True, oauth_user=True),
+        Index("ix_exportauditlog_dataset_created", "datasetType", "created_at"),
+    )
 
     datasetType: str = Field(sa_column=Column(String, nullable=False))
     format: str = Field(sa_column=Column(String, nullable=False))

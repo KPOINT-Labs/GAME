@@ -1,7 +1,7 @@
 from pydantic import ConfigDict
 from sqlmodel import Column, Field, ForeignKey, String
 
-from app.model.base_model import BaseModel
+from app.model.base_model import BaseModel, audit_foreign_keys
 
 
 class Users(BaseModel, table=True):
@@ -12,6 +12,8 @@ class Users(BaseModel, table=True):
         externalUserId (str): The external user ID.
 
     """
+
+    __table_args__ = (*audit_foreign_keys(api_key=True),)
 
     externalUserId: str = Field(sa_column=Column(String, unique=True))
     apiKey_used: str = Field(

@@ -3,7 +3,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlmodel import Column, Field, Float, ForeignKey, Integer, String
 
 from app.core.config import configs
-from app.model.base_model import BaseModel
+from app.model.base_model import BaseModel, audit_foreign_keys
 
 
 class Wallet(BaseModel, table=True):
@@ -16,6 +16,8 @@ class Wallet(BaseModel, table=True):
         conversionRate (float): The conversion rate from points to coins.
         userId (str): The ID of the user associated with the wallet.
     """
+
+    __table_args__ = (*audit_foreign_keys(api_key=True),)
 
     coinsBalance: float = Field(sa_column=Column(Float, default=0.0))
     pointsBalance: float = Field(sa_column=Column(Float, default=0.0))

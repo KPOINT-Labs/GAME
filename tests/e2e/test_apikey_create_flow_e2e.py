@@ -244,6 +244,10 @@ def apikey_create_context(
                 )
             )
             created_oauth_user = True
+            # The models define no ORM relationships, so SQLAlchemy does not
+            # order these inserts by foreign key: write the OAuth user first,
+            # or the apikey.oauth_user_id foreign key fails on a fresh DB.
+            session.flush()
 
         session.add(
             ApiKey(

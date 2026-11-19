@@ -123,17 +123,6 @@ can be hard-deleted without cascading away its history.
            string      apiKey_used      FK
            string      oauth_user_id    FK
        }
-       UserInteractions {
-           UUID        id                PK
-           datetime_tz created_at
-           datetime_tz updated_at
-           UUID        userId            FK
-           UUID        taskId            FK
-           string      interactionType
-           string      interactionDetail
-           string      apiKey_used       FK
-           string      oauth_user_id     FK
-       }
        UserPoints {
            UUID        id               PK
            datetime_tz created_at
@@ -305,7 +294,6 @@ can be hard-deleted without cascading away its history.
        ApiKey          ||--o{ TaskParams           : "audit"
        ApiKey          ||--o{ UserGameConfig       : "audit"
        ApiKey          ||--o{ UserActions          : "audit"
-       ApiKey          ||--o{ UserInteractions     : "audit"
        ApiKey          ||--o{ UserPoints           : "audit"
        ApiKey          ||--o{ Wallet               : "audit"
        ApiKey          ||--o{ WalletTransactions   : "audit"
@@ -326,8 +314,6 @@ can be hard-deleted without cascading away its history.
        Games           ||--o{ UserGameConfig       : "configures"
        Users           ||--o{ UserGameConfig       : "enrolled in"
        Users           ||--o{ UserActions          : "performs"
-       Users           ||--o{ UserInteractions     : "has"
-       Tasks           ||--o{ UserInteractions     : "tracked by"
        Users           ||--o{ UserPoints           : "earns"
        Tasks           ||--o{ UserPoints           : "awards"
 
@@ -407,9 +393,6 @@ Participation & scoring
    * - **UserActions**
      - An explicit event a user performed (``typeAction`` + structured
        ``data``), recorded for audit and as scoring input.
-   * - **UserInteractions**
-     - A typed interaction between a user and a task
-       (``interactionType``/``interactionDetail``).
    * - **UserPoints**
      - The heart of the system: one row per award. Holds ``points``, the
        ``caseName`` (why the rule matched), an ``idempotencyKey`` (dedupes

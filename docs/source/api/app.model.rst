@@ -27,7 +27,6 @@ Submodules
    app.model.uptime_logs
    app.model.user_actions
    app.model.user_game_config
-   app.model.user_interactions
    app.model.user_points
    app.model.users
    app.model.wallet

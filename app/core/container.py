@@ -21,7 +21,6 @@ from app.repository import (
     UptimeLogsRepository,
     UserActionsRepository,
     UserGameConfigRepository,
-    UserInteractionsRepository,
     UserPointsRepository,
     UserRepository,
     WalletRepository,
@@ -47,7 +46,6 @@ from app.services import (
     UptimeLogsService,
     UserActionsService,
     UserGameConfigService,
-    UserInteractionsService,
     UserPointsAnalyticsService,
     UserPointsService,
     UserService,
@@ -97,8 +95,6 @@ class Container(containers.DeclarativeContainer):
           KpiMetricsRepository.
         uptime_logs_repository (providers.Factory): Factory provider for
           UptimeLogsRepository.
-        user_interactions_repository (providers.Factory): Factory provider for
-          UserInteractionsRepository.
         dashboard_repository (providers.Factory): Factory provider for
           DashboardRepository.
         oauth_users_repository (providers.Factory): Factory provider for
@@ -129,8 +125,6 @@ class Container(containers.DeclarativeContainer):
           KpiMetricsService.
         uptime_logs_service (providers.Factory): Factory provider for
           UptimeLogsService.
-        user_interactions_service (providers.Factory): Factory provider for
-          UserInteractionsService.
         user_game_config_service (providers.Factory): Factory provider for
             UserGameConfigService.
         dashboard_service (providers.Factory): Factory provider for
@@ -228,10 +222,6 @@ class Container(containers.DeclarativeContainer):
 
     uptime_logs_repository = providers.Factory(
         UptimeLogsRepository, session_factory=db.provided.session
-    )
-
-    user_interactions_repository = providers.Factory(
-        UserInteractionsRepository, session_factory=db.provided.session
     )
 
     user_game_config_repository = providers.Factory(
@@ -430,11 +420,6 @@ class Container(containers.DeclarativeContainer):
     uptime_logs_service = providers.Factory(
         UptimeLogsService,
         uptime_logs_repository=uptime_logs_repository,
-    )
-
-    user_interactions_service = providers.Factory(
-        UserInteractionsService,
-        user_interactions_repository=user_interactions_repository,
     )
 
     user_game_config_service = providers.Factory(
