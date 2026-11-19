@@ -228,6 +228,58 @@ class AllPointsByGame(BaseModel):
     )
 
 
+class LeaderboardEntry(BaseModel):
+    """
+    One ranked user on a game leaderboard.
+
+    Attributes:
+        rank (int): 1-based rank; tied users share a rank (1, 1, 3).
+        externalUserId (str): Consumer-facing user identifier.
+        points (int): Total points across every task in the game.
+        timesAwarded (int): Number of point awards behind the total.
+    """
+
+    rank: int = Field(..., description="1-based rank; ties share a rank.", examples=[1])
+    externalUserId: str = Field(
+        ..., description="External identifier of the user.", examples=["user-123"]
+    )
+    points: int = Field(
+        ..., description="Total points across all tasks in the game.", examples=[150]
+    )
+    timesAwarded: int = Field(
+        ..., description="Number of point awards behind the total.", examples=[7]
+    )
+
+
+class GameLeaderboard(BaseModel):
+    """
+    A page of a game's leaderboard.
+
+    Attributes:
+        externalGameId (str): Consumer-facing game identifier.
+        totalUsers (int): Number of users with points in the game.
+        limit (int): Page size requested.
+        offset (int): Number of ranked users skipped.
+        entries (List[LeaderboardEntry]): Ranked users for this page.
+    """
+
+    externalGameId: str = Field(
+        ...,
+        description="External identifier of the game.",
+        examples=["game-city-mobility"],
+    )
+    totalUsers: int = Field(
+        ..., description="Number of users with points in the game.", examples=[42]
+    )
+    limit: int = Field(..., description="Page size requested.", examples=[10])
+    offset: int = Field(
+        ..., description="Number of ranked users skipped.", examples=[0]
+    )
+    entries: List[LeaderboardEntry] = Field(
+        ..., description="Ranked users for this page, highest points first."
+    )
+
+
 class AllPointsByGameWithDetails(BaseModel):
     """
     Detailed aggregated points view for an entire game.

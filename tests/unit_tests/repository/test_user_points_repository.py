@@ -381,3 +381,77 @@ async def test_get_all_point_of_tasks_list_with_data_returns_full_objects(
 
     assert len(results) == 1
     assert results[0].data == {"meta": "abc"}
+
+
+async def _seed_leaderboard(db_session):
+    """Game with two tasks and four users: alice 15, bob 15, carol 7, dave 0 pts
+    in another game only. Returns the leaderboard game."""
+    game = await _seed_game(db_session, "g-lb")
+    other_game = await _seed_game(db_session, "g-lb-other")
+    t1 = await _seed_task(db_session, game.id, "task-lb-1")
+    t2 = await _seed_task(db_session, game.id, "task-lb-2")
+    t_other = await _seed_task(db_session, other_game.id, "task-lb-other")
+    alice = await _seed_user(db_session, "alice")
+    bob = await _seed_user(db_session, "bob")
+    carol = await _seed_user(db_session, "carol")
+    dave = await _seed_user(db_session, "dave")
+    await _seed_points(db_session, alice.id, t1.id, points=10)
+    await _seed_points(db_session, alice.id, t2.id, points=5)
+    await _seed_points(db_session, bob.id, t1.id, points=15)
+    await _seed_points(db_session, carol.id, t2.id, points=3)
+    await _seed_points(db_session, carol.id, t2.id, points=4)
+    # Points in another game must not count towards this leaderboard.
+    await _seed_points(db_session, carol.id, t_other.id, points=100)
+    await _seed_points(db_session, dave.id, t_other.id, points=50)
+    return game
+
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_sums_across_tasks_and_ranks_ties(repository, db_session):
+    game = await _seed_leaderboard(db_session)
+
+    rows, total = await repository.get_leaderboard_by_gameId(game.id, limit=10)
+
+    assert total == 3
+    assert [(r.rank, r.externalUserId, r.points, r.timesAwarded) for r in rows] == [
+        (1, "alice", 15, 2),
+        (1, "bob", 15, 1),
+        (3, "carol", 7, 2),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_keeps_global_rank_when_paginating(
+    repository, db_session
+):
+    game = await _seed_leaderboard(db_session)
+
+    rows, total = await repository.get_leaderboard_by_gameId(game.id, limit=1, offset=2)
+
+    assert total == 3
+    assert [(r.rank, r.externalUserId) for r in rows] == [(3, "carol")]
+
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_page_past_end_still_reports_total(
+    repository, db_session
+):
+    game = await _seed_leaderboard(db_session)
+
+    rows, total = await repository.get_leaderboard_by_gameId(
+        game.id, limit=10, offset=10
+    )
+
+    assert rows == []
+    assert total == 3
+
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_empty_for_game_without_points(repository, db_session):
+    game = await _seed_game(db_session, "g-lb-empty")
+    await _seed_task(db_session, game.id, "task-lb-empty")
+
+    rows, total = await repository.get_leaderboard_by_gameId(game.id, limit=10)
+
+    assert rows == []
+    assert total == 0

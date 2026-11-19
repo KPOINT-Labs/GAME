@@ -15,6 +15,8 @@ from app.schema.task_schema import BaseUserFirstAction, TasksWithUsers
 from app.schema.user_points_schema import (
     AllPointsByGame,
     GameDetail,
+    GameLeaderboard,
+    LeaderboardEntry,
     PointsAssignedToUser,
     PointsAssignedToUserDetails,
     ResponseGetPointsByGame,
@@ -271,6 +273,69 @@ class PointsQueryMixin(UserPointsContext):
                             )
                         )
         return new_response
+
+    async def get_leaderboard_by_gameId(
+        self,
+        gameId,
+        *,
+        limit: int = 10,
+        offset: int = 0,
+        api_key: str = None,
+        oauth_user_id: str = None,
+        is_admin: bool = False,
+        enforce_scope: bool = False,
+    ) -> GameLeaderboard:
+        """
+        Rank a game's users by total points.
+
+        Unlike :meth:`get_points_by_gameId`, a game with no tasks or no points
+        is not an error: it simply has an empty leaderboard.
+
+        Args:
+            gameId: Internal game identifier.
+            limit (int): Page size.
+            offset (int): Number of ranked users to skip.
+            api_key (str): Caller's API key, used when ``enforce_scope``.
+            oauth_user_id (str): Caller's OAuth subject, used when scoping.
+            is_admin (bool): Whether the caller has the admin role.
+            enforce_scope (bool): When ``True``, verify access to the game.
+
+        Returns:
+            GameLeaderboard: The requested page of ranked users.
+
+        Raises:
+            NotFoundError: If the game does not exist.
+        """
+        if enforce_scope:
+            game = await get_authorized_game(
+                self.game_repository,
+                gameId,
+                api_key=api_key,
+                oauth_user_id=oauth_user_id,
+                is_admin=is_admin,
+            )
+        else:
+            game = await self.game_repository.read_by_column(
+                "id", gameId, not_found_message=f"Game with gameId: {gameId} not found"
+            )
+        rows, total_users = await self.user_points_repository.get_leaderboard_by_gameId(
+            game.id, limit=limit, offset=offset
+        )
+        return GameLeaderboard(
+            externalGameId=game.externalGameId,
+            totalUsers=total_users,
+            limit=limit,
+            offset=offset,
+            entries=[
+                LeaderboardEntry(
+                    rank=row.rank,
+                    externalUserId=row.externalUserId,
+                    points=row.points,
+                    timesAwarded=row.timesAwarded,
+                )
+                for row in rows
+            ],
+        )
 
     async def get_points_by_gameId(
         self,

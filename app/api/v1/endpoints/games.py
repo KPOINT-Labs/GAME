@@ -43,6 +43,7 @@ from app.api.v1.endpoints.games_crud import (
 # Points / actions
 from app.api.v1.endpoints.games_points import (
     assign_points_to_user,
+    get_leaderboard_by_gameId,
     get_points_by_gameId,
     get_points_by_gameId_with_details,
     get_points_by_task_id,
@@ -108,6 +109,7 @@ __all__ = [
     "duplicate_task",
     "get_game_by_id",
     "get_games_list",
+    "get_leaderboard_by_gameId",
     "get_points_by_gameId",
     "get_points_by_gameId_with_details",
     "get_points_by_task_id",

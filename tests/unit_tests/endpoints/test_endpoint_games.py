@@ -572,6 +572,28 @@ class TestGamesEndpoints(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, {"game": "points"})
 
+    async def test_get_leaderboard_by_game_id_passes_paging_and_scope(self):
+        game_id = uuid4()
+        service = AsyncMock()
+        service.get_leaderboard_by_gameId.return_value = {"leaderboard": []}
+
+        result = await games.get_leaderboard_by_gameId(
+            gameId=game_id,
+            limit=5,
+            offset=10,
+            service=service,
+            audit=self._audit(api_key="api-key-1", oauth_user_id="oauth-user-1"),
+        )
+
+        self.assertEqual(result, {"leaderboard": []})
+        service.get_leaderboard_by_gameId.assert_awaited_once()
+        args, kwargs = service.get_leaderboard_by_gameId.call_args
+        self.assertEqual(args, (game_id,))
+        self.assertEqual(kwargs["limit"], 5)
+        self.assertEqual(kwargs["offset"], 10)
+        self.assertEqual(kwargs["api_key"], "api-key-1")
+        self.assertTrue(kwargs["enforce_scope"])
+
     async def test_get_points_by_game_id_with_details(self):
         game_id = uuid4()
         service = AsyncMock()

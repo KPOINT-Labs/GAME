@@ -106,6 +106,62 @@ class UserPointsRepository(BaseRepository):
             )
             return (await session.execute(stmt)).all()
 
+    async def get_leaderboard_by_gameId(self, gameId, limit: int, offset: int = 0):
+        """
+        Rank users in a game by their total points across all its tasks.
+
+        Totals are computed in SQL (``SUM ... GROUP BY user``) and ranked with
+        a ``RANK()`` window, which is evaluated before ``LIMIT``/``OFFSET`` so
+        ranks stay global across pages. Ties share a rank and the next rank is
+        skipped (1, 1, 3); within a tie rows are ordered by ``externalUserId``
+        so pagination is deterministic.
+
+        Args:
+            gameId: Internal game identifier.
+            limit (int): Maximum number of rows to return.
+            offset (int): Number of ranked rows to skip.
+
+        Returns:
+            tuple[list, int]: Rows of ``(rank, externalUserId, points,
+            timesAwarded)`` for the requested page, and the total number of
+            ranked users in the game.
+        """
+        totals = (
+            select(
+                Users.externalUserId.label("externalUserId"),
+                func.sum(UserPoints.points).label("points"),
+                func.count(UserPoints.id).label("timesAwarded"),
+            )
+            .select_from(UserPoints)
+            .join(Tasks, Tasks.id == UserPoints.taskId)
+            .join(Users, Users.id == UserPoints.userId)
+            .filter(Tasks.gameId == gameId)
+            .group_by(Users.id, Users.externalUserId)
+            .subquery()
+        )
+        page = (
+            select(
+                func.rank().over(order_by=totals.c.points.desc()).label("rank"),
+                totals.c.externalUserId,
+                totals.c.points,
+                totals.c.timesAwarded,
+                func.count().over().label("totalUsers"),
+            )
+            .order_by(totals.c.points.desc(), totals.c.externalUserId)
+            .limit(limit)
+            .offset(offset)
+        )
+        async with self.session_factory() as session:
+            rows = (await session.execute(page)).all()
+            if rows:
+                return rows, rows[0].totalUsers
+            if offset == 0:
+                return rows, 0
+            # Page past the end: the window count is unavailable, so count
+            # the ranked users directly.
+            total = await session.scalar(select(func.count()).select_from(totals))
+            return rows, total or 0
+
     async def get_all_UserPoints_by_taskId(self, taskId):
         """
         Aggregate points per user for a single task.
