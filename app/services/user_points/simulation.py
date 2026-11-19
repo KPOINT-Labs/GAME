@@ -5,6 +5,7 @@ tasks without writing anything. Custom DSL strategies are skipped here; they
 have their own dedicated simulate endpoint.
 """
 
+import inspect
 import logging
 from collections import Counter
 from typing import Any
@@ -188,6 +189,10 @@ class PointsSimulationMixin(UserPointsContext):
                         userGroup=userGroup,
                         user_last_task=user_last_task,
                     )
+                    # Strategies that read from the DB (e.g. GREENCROWD) are
+                    # async; simple ones still return a value directly.
+                    if inspect.isawaitable(task_simulation):
+                        task_simulation = await task_simulation
                     response.append(task_simulation)
                 except Exception:
                     logger.exception(

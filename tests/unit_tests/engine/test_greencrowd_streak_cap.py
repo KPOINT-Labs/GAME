@@ -19,7 +19,6 @@ from app.engine.greencrowdStrategy import (
 )
 from tests.unit_tests.engine import test_greencrowd_characterization as chars
 from tests.unit_tests.engine.test_greencrowdStrategy import (
-    QueryRecords,
     _build_strategy_with_mocked_container,
 )
 
@@ -101,12 +100,12 @@ TASK = SimpleNamespace(id="task-a", externalTaskId="poi_1")
 TEN_DAY_STREAK = [_record("task-a", "user-1", _at(11, d)) for d in range(9, 19)]
 
 
-def _simulate_dynamic(game_params=None, strategy_default=None):
+async def _simulate_dynamic(game_params=None, strategy_default=None):
     strategy = _build_strategy_with_mocked_container()
     if strategy_default is not None:
         strategy.variable_streak_bonus_cap = strategy_default
     strategy.user_points_service.get_all_point_of_tasks_list.return_value = (
-        QueryRecords(TEN_DAY_STREAK)
+        TEN_DAY_STREAK
     )
     strategy.user_service.get_user_by_externalUserId.return_value = SimpleNamespace(
         id="user-1"
@@ -114,7 +113,7 @@ def _simulate_dynamic(game_params=None, strategy_default=None):
     data = {"task": TASK, "allTasks": [TASK], "externalUserId": "user-1"}
     if game_params is not None:
         data["gameParams"] = game_params
-    return strategy.simulate_strategy(
+    return await strategy.simulate_strategy(
         data_to_simulate=data, userGroup="dynamic_calculation"
     )
 
@@ -129,15 +128,15 @@ def test_strategy_exposes_cap_variable_defaulting_to_no_cap():
     assert strategy.get_variables()[STREAK_BONUS_CAP_PARAM] == 0
 
 
-def test_simulate_without_cap_keeps_full_streak_bonus(frozen_now):
-    result = _simulate_dynamic()
+async def test_simulate_without_cap_keeps_full_streak_bonus(frozen_now):
+    result = await _simulate_dynamic()
 
     assert _dim(result, "DIM_S") == 40
 
 
-def test_simulate_caps_streak_bonus_from_game_param(frozen_now):
-    uncapped = _simulate_dynamic()
-    capped = _simulate_dynamic({STREAK_BONUS_CAP_PARAM: "25"})
+async def test_simulate_caps_streak_bonus_from_game_param(frozen_now):
+    uncapped = await _simulate_dynamic()
+    capped = await _simulate_dynamic({STREAK_BONUS_CAP_PARAM: "25"})
 
     assert _dim(capped, "DIM_S") == 25
     assert capped.totalSimulatedPoints == uncapped.totalSimulatedPoints - 15
@@ -146,31 +145,31 @@ def test_simulate_caps_streak_bonus_from_game_param(frozen_now):
         assert _dim(capped, key) == _dim(uncapped, key)
 
 
-def test_simulate_cap_above_bonus_has_no_effect(frozen_now):
-    result = _simulate_dynamic({STREAK_BONUS_CAP_PARAM: "100"})
+async def test_simulate_cap_above_bonus_has_no_effect(frozen_now):
+    result = await _simulate_dynamic({STREAK_BONUS_CAP_PARAM: "100"})
 
     assert _dim(result, "DIM_S") == 40
 
 
-def test_simulate_uses_strategy_default_when_game_has_no_cap(frozen_now):
-    result = _simulate_dynamic({}, strategy_default=30)
+async def test_simulate_uses_strategy_default_when_game_has_no_cap(frozen_now):
+    result = await _simulate_dynamic({}, strategy_default=30)
 
     assert _dim(result, "DIM_S") == 30
 
 
-def test_simulate_game_param_overrides_strategy_default(frozen_now):
-    result = _simulate_dynamic({STREAK_BONUS_CAP_PARAM: "0"}, strategy_default=30)
+async def test_simulate_game_param_overrides_strategy_default(frozen_now):
+    result = await _simulate_dynamic({STREAK_BONUS_CAP_PARAM: "0"}, strategy_default=30)
 
     assert _dim(result, "DIM_S") == 40
 
 
-def test_simulate_ignores_invalid_game_param(frozen_now):
-    result = _simulate_dynamic({STREAK_BONUS_CAP_PARAM: "lots"})
+async def test_simulate_ignores_invalid_game_param(frozen_now):
+    result = await _simulate_dynamic({STREAK_BONUS_CAP_PARAM: "lots"})
 
     assert _dim(result, "DIM_S") == 40
 
 
-def test_simulate_caps_average_score_group():
+async def test_simulate_caps_average_score_group():
     """Past awards may predate the cap, so it also applies to averaged values."""
     strategy = _build_strategy_with_mocked_container()
     strategy.user_points_service.get_all_point_of_tasks_list.return_value = [
@@ -192,7 +191,7 @@ def test_simulate_caps_average_score_group():
         )
     ]
 
-    result = strategy.simulate_strategy(
+    result = await strategy.simulate_strategy(
         data_to_simulate={
             "task": TASK,
             "allTasks": [TASK],

@@ -1108,6 +1108,26 @@ class TestUserPointsService(unittest.IsolatedAsyncioTestCase):
         )
         return captured
 
+    async def test_get_points_simulated_of_user_in_game_awaits_async_strategy(self):
+        """Async strategies (e.g. GREENCROWD) return their result, not a coroutine."""
+        self._setup_single_task_simulation()
+
+        class AsyncStrategy:
+            async def simulate_strategy(
+                self, data_to_simulate, userGroup, user_last_task
+            ):
+                return {"externalTaskId": data_to_simulate["task"].externalTaskId}
+
+        self.service.strategy_service.get_Class_by_id = MagicMock(
+            return_value=AsyncStrategy()
+        )
+
+        result, _ = await self.service.get_points_simulated_of_user_in_game(
+            "game-1", "user_1"
+        )
+
+        self.assertEqual(result, [{"externalTaskId": "t-1"}])
+
     async def test_get_points_simulated_of_user_in_game_passes_game_params(self):
         captured = self._setup_single_task_simulation()
         game_params_repository = AsyncMock()
