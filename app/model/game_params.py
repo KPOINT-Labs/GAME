@@ -2,7 +2,7 @@ from pydantic import ConfigDict
 from sqlalchemy.dialects.postgresql import UUID
 from sqlmodel import Column, Field, ForeignKey, String
 
-from app.model.base_model import BaseModel, audit_foreign_keys
+from app.model.base_model import BaseModel
 
 
 class GamesParams(BaseModel, table=True):
@@ -28,8 +28,6 @@ class GamesParams(BaseModel, table=True):
         orm_mode (bool): Allows the model to be used with ORM, set to True to
           enable.
     """
-
-    __table_args__ = (*audit_foreign_keys(api_key=True),)
 
     # Field definitions
     key: str = Field(sa_column=Column(String))

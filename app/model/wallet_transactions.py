@@ -29,7 +29,7 @@ from pydantic import ConfigDict
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlmodel import Column, Field, Float, ForeignKey, Integer, String
 
-from app.model.base_model import BaseModel, audit_foreign_keys
+from app.model.base_model import BaseModel
 
 
 class WalletTransactions(BaseModel, table=True):
@@ -45,8 +45,6 @@ class WalletTransactions(BaseModel, table=True):
           transaction.
         walletId (str): The ID of the wallet associated with the transaction.
     """
-
-    __table_args__ = (*audit_foreign_keys(api_key=True),)
 
     transactionType: str = Field(sa_column=Column(String))
     points: int = Field(sa_column=Column(Integer))

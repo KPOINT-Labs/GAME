@@ -1,7 +1,7 @@
 from pydantic import ConfigDict
 from sqlmodel import Column, Field, ForeignKey, String
 
-from app.model.base_model import BaseModel, audit_foreign_keys
+from app.model.base_model import BaseModel
 
 
 class Games(BaseModel, table=True):
@@ -30,8 +30,6 @@ class Games(BaseModel, table=True):
     Configuration:
         orm_mode (bool): Enables ORM mode for Pydantic models.
     """
-
-    __table_args__ = (*audit_foreign_keys(api_key=True),)
 
     externalGameId: str = Field(sa_column=Column(String, unique=True))
     # Nullable in the database (never tightened by a migration); the API

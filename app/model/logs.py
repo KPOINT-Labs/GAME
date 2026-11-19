@@ -1,7 +1,7 @@
 from pydantic import ConfigDict
 from sqlmodel import JSON, Column, Field, ForeignKey, String
 
-from app.model.base_model import BaseModel, audit_foreign_keys
+from app.model.base_model import BaseModel
 
 
 class Logs(BaseModel, table=True):
@@ -23,8 +23,6 @@ class Logs(BaseModel, table=True):
         __hash__: Return the hash of the object.
 
     """
-
-    __table_args__ = (*audit_foreign_keys(api_key=True, oauth_user=True),)
 
     log_level: str = Field(sa_column=Column(String))
     message: str = Field(sa_column=Column(String))

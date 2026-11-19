@@ -2,7 +2,7 @@ from pydantic import ConfigDict
 from sqlalchemy.dialects.postgresql import UUID
 from sqlmodel import Column, Field, ForeignKey, String
 
-from app.model.base_model import BaseModel, audit_foreign_keys
+from app.model.base_model import BaseModel
 
 
 class TasksParams(BaseModel, table=True):
@@ -31,8 +31,6 @@ class TasksParams(BaseModel, table=True):
         orm_mode (bool): Enables ORM compatibility mode, facilitating
           integration with database ORM frameworks.
     """
-
-    __table_args__ = (*audit_foreign_keys(api_key=True),)
 
     key: str = Field(sa_column=Column(String))
     value: str | int | float | bool | dict = Field(sa_column=Column(String))

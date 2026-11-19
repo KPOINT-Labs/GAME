@@ -42,10 +42,14 @@ def audit_foreign_keys(*, api_key: bool = False, oauth_user: bool = False) -> tu
     Foreign keys for the ``apiKey_used`` / ``oauth_user_id`` audit columns.
 
     Only some tables have these constraints in the database, so each model
-    opts in to exactly the ones its table has, in ``__table_args__``.
-    ``oauth_user_id`` in particular is left unconstrained on the older
-    tables: the app writes the caller's token subject there without creating
-    an ``oauthusers`` row first.
+    opts in to exactly the ones its table has, in ``__table_args__``. Do not
+    use it for a column that already declares the same ``ForeignKey`` itself:
+    ``create_all`` would then emit the constraint twice.
+    ``oauth_user_id`` is unconstrained on the older tables in the database.
+    Adding those constraints would be a schema change: existing rows can hold
+    subjects with no ``oauthusers`` row (the auth middleware only bootstraps
+    that row on authenticated requests), so it needs a data check and a
+    migration, not a model change.
 
     Args:
         api_key (bool): Add ``apiKey_used -> apikey.apiKey``.
@@ -105,7 +109,7 @@ class BaseModel(SQLModel):
     updated_at: datetime = updated_at_field()
     # No foreign keys here: only some tables have them in the database (see
     # ``audit_foreign_keys``). Declaring them for every table made Alembic
-    # autogenerate propose foreign keys that would reject existing writes.
+    # autogenerate propose adding foreign keys that existing rows may violate.
     apiKey_used: Optional[str] = Field(default=None, nullable=True)
     oauth_user_id: Optional[str] = Field(default=None, nullable=True)
 

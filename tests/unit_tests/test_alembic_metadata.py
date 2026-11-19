@@ -74,3 +74,30 @@ def test_metadata_sorts_without_foreign_key_cycle_warning():
         tables = [t.name for t in SQLModel.metadata.sorted_tables]
 
     assert tables.index("oauthusers") < tables.index("apikey")
+
+
+def test_no_table_declares_the_same_foreign_key_twice():
+    """A column-level ForeignKey plus an identical table-level one (for example
+    from ``audit_foreign_keys``) makes ``create_all`` emit both constraints,
+    while ``alembic check`` treats them as one and stays silent."""
+    from collections import Counter
+
+    from sqlmodel import SQLModel
+
+    from app.model import import_all_models
+
+    import_all_models()
+    duplicates = {}
+    for table in SQLModel.metadata.tables.values():
+        signatures = Counter(
+            (
+                tuple(c.name for c in fk.columns),
+                tuple(e.target_fullname for e in fk.elements),
+            )
+            for fk in table.foreign_key_constraints
+        )
+        repeated = [sig for sig, count in signatures.items() if count > 1]
+        if repeated:
+            duplicates[table.name] = repeated
+
+    assert duplicates == {}
