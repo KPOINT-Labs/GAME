@@ -303,7 +303,8 @@ class PointsQueryMixin(UserPointsContext):
         Build the fields shared by game and task leaderboards.
 
         Fetches the requested page and, when ``externalUserId`` is given, that
-        user's row. The user's ``rank`` is kept only within
+        user's row, in a single query that ranks the users once. The user's
+        ``rank`` is kept only within
         :data:`LEADERBOARD_USER_RANK_CUTOFF`, otherwise it is ``0``; a user with
         no points (or who does not exist) gets ``rank`` 0 and ``points`` 0.
 
@@ -318,14 +319,16 @@ class PointsQueryMixin(UserPointsContext):
         Returns:
             dict: Keyword arguments for :class:`GameLeaderboard`.
         """
-        rows, total_users = await self.user_points_repository.get_leaderboard_by_gameId(
-            game.id, limit=limit, offset=offset, taskId=task_id, cohort=cohort
+        rows, total_users, user_row = await self.user_points_repository.get_leaderboard(
+            game.id,
+            limit=limit,
+            offset=offset,
+            taskId=task_id,
+            cohort=cohort,
+            externalUserId=externalUserId,
         )
         user_entry = None
         if externalUserId is not None:
-            user_row = await self.user_points_repository.get_leaderboard_rank_of_user(
-                game.id, externalUserId, taskId=task_id, cohort=cohort
-            )
             if user_row is None:
                 user_entry = LeaderboardEntry(
                     rank=0, externalUserId=externalUserId, points=0, timesAwarded=0
