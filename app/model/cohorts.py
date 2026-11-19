@@ -44,8 +44,14 @@ class UserGameCohort(BaseModel, table=True):
     userId: str = Field(
         sa_column=Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     )
+    # Cascade so deleting a game (GameRepository.delete_game_by_id) also
+    # removes its memberships instead of failing on this foreign key.
     gameId: str = Field(
-        sa_column=Column(UUID(as_uuid=True), ForeignKey("games.id"), nullable=False)
+        sa_column=Column(
+            UUID(as_uuid=True),
+            ForeignKey("games.id", ondelete="CASCADE"),
+            nullable=False,
+        )
     )
     cohort: str = Field(sa_column=Column(String(COHORT_MAX_LENGTH), nullable=False))
 

@@ -52,7 +52,7 @@ def upgrade():
         sa.ForeignKeyConstraint(["apiKey_used"], ["apikey.apiKey"]),
         sa.ForeignKeyConstraint(["oauth_user_id"], ["oauthusers.provider_user_id"]),
         sa.ForeignKeyConstraint(["userId"], ["users.id"]),
-        sa.ForeignKeyConstraint(["gameId"], ["games.id"]),
+        sa.ForeignKeyConstraint(["gameId"], ["games.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "userId", "gameId", "cohort", name="uq_usergamecohort_user_game_cohort"

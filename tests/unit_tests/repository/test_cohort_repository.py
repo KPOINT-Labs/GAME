@@ -116,3 +116,18 @@ async def test_add_points_cohorts_rolls_back_with_caller(
         await session.rollback()
 
     assert await repository.get_points_cohorts(points.id) == []
+
+
+def test_cohort_foreign_keys_cascade_on_delete():
+    """Deleting a game (or a points award) must remove its cohort rows, or
+    the delete fails on Postgres. SQLite here does not enforce foreign keys,
+    so assert the cascade is declared; it was verified on Postgres against
+    GameRepository.delete_game_by_id."""
+    from app.model.cohorts import UserGameCohort, UserPointsCohort
+
+    def ondelete(model, column):
+        (fk,) = model.__table__.c[column].foreign_keys
+        return fk.ondelete
+
+    assert ondelete(UserGameCohort, "gameId") == "CASCADE"
+    assert ondelete(UserPointsCohort, "userPointsId") == "CASCADE"
