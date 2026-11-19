@@ -31,6 +31,49 @@ def can_access_user(
     return False
 
 
+async def get_authorized_user_or_none(
+    user_repository,
+    external_user_id: str,
+    *,
+    api_key: str | None = None,
+    oauth_user_id: str | None = None,
+    is_admin: bool = False,
+) -> Any:
+    """
+    Load a user, if they exist, and assert the caller may access them.
+
+    Used by the read-only per-user points endpoints, which report an unknown
+    user as having zero points instead of returning 404. A user who exists
+    but belongs to another caller still raises :class:`ForbiddenError`.
+
+    Args:
+        user_repository: Repository used to look the user up.
+        external_user_id (str): External identifier of the user.
+        api_key (str | None): Caller's API key, for ownership scoping.
+        oauth_user_id (str | None): Caller's OAuth subject, for scoping.
+        is_admin (bool): Whether the caller has the admin role.
+
+    Returns:
+        Any: The authorized user entity, or ``None`` if no such user exists.
+
+    Raises:
+        ForbiddenError: If the user exists but the caller may not access them.
+    """
+    user = await user_repository.read_by_column(
+        "externalUserId", external_user_id, not_found_raise_exception=False
+    )
+    if user is None:
+        return None
+    if not can_access_user(
+        user,
+        api_key=api_key,
+        oauth_user_id=oauth_user_id,
+        is_admin=is_admin,
+    ):
+        raise ForbiddenError(detail="You do not have permission to access this user")
+    return user
+
+
 async def get_authorized_user(
     user_repository,
     external_user_id: str,

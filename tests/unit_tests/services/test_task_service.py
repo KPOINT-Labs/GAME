@@ -465,13 +465,19 @@ class TestTaskService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, [{"points": 3}])
 
-    async def test_get_points_of_user_by_task_id_raises_when_user_points_missing(self):
+    async def test_get_points_of_user_by_task_id_returns_zeros_when_no_points(self):
+        # Unknown users and users without points in the task both get zeros
+        # instead of 404.
         self.service.get_points_by_task_id_with_details = AsyncMock(return_value=[])
 
-        with self.assertRaises(NotFoundError):
-            await self.service.get_points_of_user_by_task_id(
-                uuid4(), "task-1", "user-x"
-            )
+        result = await self.service.get_points_of_user_by_task_id(
+            uuid4(), "task-1", "user-x"
+        )
+
+        self.assertEqual(
+            result.model_dump(),
+            {"externalUserId": "user-x", "points": 0, "timesAwarded": 0},
+        )
 
     async def test_get_points_of_user_by_task_id_returns_first_matching_user(self):
         matching = SimpleNamespace(externalUserId="user-1", points=8)

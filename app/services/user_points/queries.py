@@ -26,7 +26,7 @@ from app.schema.user_points_schema import (
     TaskPointsByGame,
     UserGamePoints,
 )
-from app.services.game_access import get_authorized_game, get_authorized_user
+from app.services.game_access import get_authorized_game, get_authorized_user_or_none
 from app.services.user_points._base import FANOUT_LIMIT, UserPointsContext
 
 
@@ -207,13 +207,15 @@ class PointsQueryMixin(UserPointsContext):
             enforce_scope (bool): When ``True``, verify access to the user.
 
         Returns:
-            list[AllPointsByGame]: Detailed points grouped per game.
+            list[AllPointsByGame]: Detailed points grouped per game. Empty
+            when the user has no points or does not exist.
 
         Raises:
-            NotFoundError: If the user does not exist.
+            ForbiddenError: If scoping is enforced and the user exists but
+                belongs to another caller.
         """
         if enforce_scope:
-            user = await get_authorized_user(
+            user = await get_authorized_user_or_none(
                 self.users_repository,
                 externalUserId,
                 api_key=api_key,
@@ -222,12 +224,10 @@ class PointsQueryMixin(UserPointsContext):
             )
         else:
             user = await self.users_repository.read_by_column(
-                "externalUserId", externalUserId, not_found_raise_exception=True
+                "externalUserId", externalUserId, not_found_raise_exception=False
             )
         if not user:
-            raise NotFoundError(
-                detail=f"User not found by externalUserId: {externalUserId}"
-            )
+            return []
 
         tasks_of_users = await self.user_points_repository.get_task_by_externalUserId(
             externalUserId
@@ -545,10 +545,12 @@ class PointsQueryMixin(UserPointsContext):
             enforce_scope (bool): When ``True``, verify access to the game.
 
         Returns:
-            list[PointsAssignedToUser]: The user's awards in the game.
+            list[PointsAssignedToUser]: The user's awards in the game. Empty
+            when the user has no points, does not exist, or the game has no
+            tasks.
 
         Raises:
-            NotFoundError: If the game or user does not exist.
+            NotFoundError: If the game does not exist.
         """
         if enforce_scope:
             game = await get_authorized_game(
@@ -568,14 +570,16 @@ class PointsQueryMixin(UserPointsContext):
             "externalUserId", externalUserId, not_found_raise_exception=False
         )
         if not user:
-            raise NotFoundError(
-                detail=f"User not found by externalUserId: {externalUserId}"
-            )
+            # Unknown users have no points: same answer as a known user
+            # with no awards in this game.
+            return []
         tasks = await self.task_repository.read_by_column(
             "gameId", game.id, not_found_raise_exception=False, only_one=False
         )
         if not tasks:
-            raise NotFoundError(detail=f"Tasks not found by gameId: {game.id}")
+            # A game without tasks has no points to report, like an empty
+            # leaderboard.
+            return []
         response = []
         points_by_task = _group_points_by_task(
             await self.user_points_repository.get_points_and_users_by_taskIds(
@@ -744,10 +748,12 @@ class PointsQueryMixin(UserPointsContext):
             UserGamePoints: The user's points grouped by game.
 
         Raises:
-            NotFoundError: If the user does not exist.
+            ForbiddenError: If scoping is enforced and the user exists but
+                belongs to another caller. Unknown users are not an error:
+                they are returned with zero points and ``userExists=False``.
         """
         if enforce_scope:
-            user_data = await get_authorized_user(
+            user_data = await get_authorized_user_or_none(
                 self.users_repository,
                 externalUserId,
                 api_key=api_key,

@@ -3,6 +3,7 @@
 from typing import Any
 
 from app.core.exceptions import NotFoundError
+from app.schema.user_points_schema import PointsAssignedToUser
 from app.services.game_access import get_authorized_game
 from app.services.task._base import TaskServiceContext
 
@@ -83,7 +84,11 @@ class TaskPointsMixin(TaskServiceContext):
             externalUserId (str): The external user ID.
 
         Returns:
-            dict: The user's points details.
+            The user's points in the task. A user with no points in the task,
+            or who does not exist, gets ``points`` and ``timesAwarded`` of 0.
+
+        Raises:
+            NotFoundError: If the task does not exist in the game.
         """
         points_task = await self.get_points_by_task_id_with_details(
             gameId,
@@ -98,9 +103,8 @@ class TaskPointsMixin(TaskServiceContext):
         )
 
         if not user_points:
-            raise NotFoundError(
-                f"User not found with externalUserId: {externalUserId} for "
-                f"externalTaskId: {externalTaskId} for gameId: {gameId}"
+            return PointsAssignedToUser(
+                externalUserId=externalUserId, points=0, timesAwarded=0
             )
         return user_points[0]
 

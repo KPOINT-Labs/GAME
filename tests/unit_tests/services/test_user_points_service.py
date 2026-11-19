@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.core.exceptions import (
+    ForbiddenError,
     InternalServerError,
     NotFoundError,
     PreconditionFailedError,
@@ -282,11 +283,37 @@ class TestUserPointsService(unittest.IsolatedAsyncioTestCase):
             2,
         )
 
-    async def test_get_points_by_external_user_id_raises_when_user_not_found(self):
+    async def test_get_points_by_external_user_id_empty_when_user_not_found(self):
         self.users_repository.read_by_column.return_value = None
 
-        with self.assertRaises(NotFoundError):
-            await self.service.get_points_by_externalUserId("missing_user")
+        result = await self.service.get_points_by_externalUserId("missing_user")
+
+        self.assertEqual(result, [])
+        self.user_points_repository.get_task_by_externalUserId.assert_not_awaited()
+
+    async def test_get_points_by_external_user_id_scoped_empty_when_user_not_found(
+        self,
+    ):
+        # Endpoints always enforce scope; an unknown user must not 404 there.
+        self.users_repository.read_by_column.return_value = None
+
+        result = await self.service.get_points_by_externalUserId(
+            "missing_user", api_key="key-1", enforce_scope=True
+        )
+
+        self.assertEqual(result, [])
+
+    async def test_get_points_by_external_user_id_scoped_forbids_other_keys_user(
+        self,
+    ):
+        self.users_repository.read_by_column.return_value = SimpleNamespace(
+            id="u", apiKey_used="other-key"
+        )
+
+        with self.assertRaises(ForbiddenError):
+            await self.service.get_points_by_externalUserId(
+                "someone_else", api_key="key-1", enforce_scope=True
+            )
 
     async def test_get_points_by_external_user_id_filters_target_user(self):
         self.users_repository.read_by_column.return_value = SimpleNamespace(
@@ -560,12 +587,13 @@ class TestUserPointsService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(NotFoundError):
             await self.service.get_points_of_user_in_game("missing-game", "user_1")
 
-    async def test_get_points_of_user_in_game_raises_when_user_not_found(self):
+    async def test_get_points_of_user_in_game_empty_when_user_not_found(self):
         self.game_repository.read_by_column.return_value = SimpleNamespace(id="game-1")
         self.users_repository.read_by_column.return_value = None
 
-        with self.assertRaises(NotFoundError):
-            await self.service.get_points_of_user_in_game("game-1", "missing-user")
+        result = await self.service.get_points_of_user_in_game("game-1", "missing-user")
+
+        self.assertEqual(result, [])
 
     async def test_get_points_of_user_in_game_returns_only_target_user_points(self):
         self.game_repository.read_by_column.return_value = SimpleNamespace(id="game-1")
@@ -590,15 +618,17 @@ class TestUserPointsService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result[0].externalUserId, "user_1")
         self.assertEqual(result[0].points, 7)
 
-    async def test_get_points_of_user_in_game_raises_when_tasks_not_found(self):
+    async def test_get_points_of_user_in_game_empty_when_game_has_no_tasks(self):
         self.game_repository.read_by_column.return_value = SimpleNamespace(id="game-1")
         self.users_repository.read_by_column.return_value = SimpleNamespace(
             id="user-id-1", externalUserId="user_1"
         )
         self.task_repository.read_by_column.return_value = []
 
-        with self.assertRaises(NotFoundError):
-            await self.service.get_points_of_user_in_game("game-1", "user_1")
+        result = await self.service.get_points_of_user_in_game("game-1", "user_1")
+
+        self.assertEqual(result, [])
+        self.user_points_repository.get_points_and_users_by_taskIds.assert_not_awaited()
 
     async def test_assign_points_to_user_directly_creates_user_and_wallet(self):
         self._setup_default_game_task_for_assignment()
@@ -1225,6 +1255,20 @@ class TestUserPointsService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.points, 0)
         self.assertEqual(result.timesAwarded, 0)
         self.assertEqual(result.games, [])
+        self.assertFalse(result.userExists)
+
+    async def test_get_all_points_by_external_user_id_scoped_zeros_when_user_missing(
+        self,
+    ):
+        # POST /users/points/query always enforces scope; its documented
+        # zeros-for-unknown-users behaviour used to 404 on this path.
+        self.users_repository.read_by_column.return_value = None
+
+        result = await self.service.get_all_points_by_externalUserId(
+            "missing-user", api_key="key-1", enforce_scope=True
+        )
+
+        self.assertEqual((result.points, result.games), (0, []))
         self.assertFalse(result.userExists)
 
     async def test_get_points_of_user_sums_points(self):
