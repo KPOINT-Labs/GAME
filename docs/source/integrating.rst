@@ -204,6 +204,8 @@ GAME exposes aggregates at every granularity:
      - ``GET /games/{gameId}/points/details``
    * - Users ranked by total points (leaderboard)
      - ``GET /games/{gameId}/leaderboard?limit=10&offset=0``
+   * - Users ranked by points in one task
+     - ``GET /games/{gameId}/tasks/{externalTaskId}/leaderboard``
    * - One user's total in a game
      - ``GET /games/{gameId}/users/{externalUserId}/points``
    * - All users' points in a task

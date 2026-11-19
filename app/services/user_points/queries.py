@@ -23,6 +23,7 @@ from app.schema.user_points_schema import (
     ResponseGetPointsByTask,
     ResponsePointsByExternalUserId,
     TaskDetail,
+    TaskLeaderboard,
     TaskPointsByGame,
     UserGamePoints,
 )
@@ -279,6 +280,83 @@ class PointsQueryMixin(UserPointsContext):
                         )
         return new_response
 
+    async def _resolve_leaderboard_game(
+        self, gameId, *, api_key, oauth_user_id, is_admin, enforce_scope
+    ):
+        """Load the game for a leaderboard, applying caller scoping if asked."""
+        if enforce_scope:
+            return await get_authorized_game(
+                self.game_repository,
+                gameId,
+                api_key=api_key,
+                oauth_user_id=oauth_user_id,
+                is_admin=is_admin,
+            )
+        return await self.game_repository.read_by_column(
+            "id", gameId, not_found_message=f"Game with gameId: {gameId} not found"
+        )
+
+    async def _build_leaderboard(
+        self, game, *, task_id, limit, offset, externalUserId
+    ) -> dict:
+        """
+        Build the fields shared by game and task leaderboards.
+
+        Fetches the requested page and, when ``externalUserId`` is given, that
+        user's row. The user's ``rank`` is kept only within
+        :data:`LEADERBOARD_USER_RANK_CUTOFF`, otherwise it is ``0``; a user with
+        no points (or who does not exist) gets ``rank`` 0 and ``points`` 0.
+
+        Args:
+            game: The resolved game entity.
+            task_id: Internal task id to rank within, or ``None`` for the game.
+            limit (int): Page size.
+            offset (int): Number of ranked users to skip.
+            externalUserId (str | None): User whose rank to include.
+
+        Returns:
+            dict: Keyword arguments for :class:`GameLeaderboard`.
+        """
+        rows, total_users = await self.user_points_repository.get_leaderboard_by_gameId(
+            game.id, limit=limit, offset=offset, taskId=task_id
+        )
+        user_entry = None
+        if externalUserId is not None:
+            user_row = await self.user_points_repository.get_leaderboard_rank_of_user(
+                game.id, externalUserId, taskId=task_id
+            )
+            if user_row is None:
+                user_entry = LeaderboardEntry(
+                    rank=0, externalUserId=externalUserId, points=0, timesAwarded=0
+                )
+            else:
+                user_entry = LeaderboardEntry(
+                    rank=(
+                        user_row.rank
+                        if user_row.rank <= LEADERBOARD_USER_RANK_CUTOFF
+                        else 0
+                    ),
+                    externalUserId=user_row.externalUserId,
+                    points=user_row.points,
+                    timesAwarded=user_row.timesAwarded,
+                )
+        return {
+            "externalGameId": game.externalGameId,
+            "totalUsers": total_users,
+            "limit": limit,
+            "offset": offset,
+            "entries": [
+                LeaderboardEntry(
+                    rank=row.rank,
+                    externalUserId=row.externalUserId,
+                    points=row.points,
+                    timesAwarded=row.timesAwarded,
+                )
+                for row in rows
+            ],
+            "user": user_entry,
+        }
+
     async def get_leaderboard_by_gameId(
         self,
         gameId,
@@ -298,10 +376,7 @@ class PointsQueryMixin(UserPointsContext):
         is not an error: it simply has an empty leaderboard.
 
         When ``externalUserId`` is given, the response also carries that
-        user's row in ``user``. Its ``rank`` is the user's global rank if it is
-        within :data:`LEADERBOARD_USER_RANK_CUTOFF`, otherwise ``0``. A user
-        with no points in the game, or who does not exist, gets ``rank`` 0
-        and ``points`` 0.
+        user's row in ``user`` (see :meth:`_build_leaderboard`).
 
         Args:
             gameId: Internal game identifier.
@@ -319,56 +394,86 @@ class PointsQueryMixin(UserPointsContext):
         Raises:
             NotFoundError: If the game does not exist.
         """
-        if enforce_scope:
-            game = await get_authorized_game(
-                self.game_repository,
-                gameId,
-                api_key=api_key,
-                oauth_user_id=oauth_user_id,
-                is_admin=is_admin,
-            )
-        else:
-            game = await self.game_repository.read_by_column(
-                "id", gameId, not_found_message=f"Game with gameId: {gameId} not found"
-            )
-        rows, total_users = await self.user_points_repository.get_leaderboard_by_gameId(
-            game.id, limit=limit, offset=offset
+        game = await self._resolve_leaderboard_game(
+            gameId,
+            api_key=api_key,
+            oauth_user_id=oauth_user_id,
+            is_admin=is_admin,
+            enforce_scope=enforce_scope,
         )
-        user_entry = None
-        if externalUserId is not None:
-            user_row = await self.user_points_repository.get_leaderboard_rank_of_user(
-                game.id, externalUserId
-            )
-            if user_row is None:
-                user_entry = LeaderboardEntry(
-                    rank=0, externalUserId=externalUserId, points=0, timesAwarded=0
-                )
-            else:
-                user_entry = LeaderboardEntry(
-                    rank=(
-                        user_row.rank
-                        if user_row.rank <= LEADERBOARD_USER_RANK_CUTOFF
-                        else 0
-                    ),
-                    externalUserId=user_row.externalUserId,
-                    points=user_row.points,
-                    timesAwarded=user_row.timesAwarded,
-                )
         return GameLeaderboard(
-            externalGameId=game.externalGameId,
-            totalUsers=total_users,
-            limit=limit,
-            offset=offset,
-            entries=[
-                LeaderboardEntry(
-                    rank=row.rank,
-                    externalUserId=row.externalUserId,
-                    points=row.points,
-                    timesAwarded=row.timesAwarded,
+            **await self._build_leaderboard(
+                game,
+                task_id=None,
+                limit=limit,
+                offset=offset,
+                externalUserId=externalUserId,
+            )
+        )
+
+    async def get_task_leaderboard(
+        self,
+        gameId,
+        externalTaskId: str,
+        *,
+        limit: int = 10,
+        offset: int = 0,
+        externalUserId: str | None = None,
+        api_key: str = None,
+        oauth_user_id: str = None,
+        is_admin: bool = False,
+        enforce_scope: bool = False,
+    ) -> TaskLeaderboard:
+        """
+        Rank users by their points within a single task of a game.
+
+        Same ranking, paging and ``user`` rules as
+        :meth:`get_leaderboard_by_gameId`, but only the task's points count.
+        A task with no points has an empty leaderboard.
+
+        Args:
+            gameId: Internal game identifier.
+            externalTaskId (str): External identifier of the task.
+            limit (int): Page size.
+            offset (int): Number of ranked users to skip.
+            externalUserId (str | None): User whose rank to include.
+            api_key (str): Caller's API key, used when ``enforce_scope``.
+            oauth_user_id (str): Caller's OAuth subject, used when scoping.
+            is_admin (bool): Whether the caller has the admin role.
+            enforce_scope (bool): When ``True``, verify access to the game.
+
+        Returns:
+            TaskLeaderboard: The requested page of ranked users.
+
+        Raises:
+            NotFoundError: If the game, or the task within it, does not exist.
+        """
+        game = await self._resolve_leaderboard_game(
+            gameId,
+            api_key=api_key,
+            oauth_user_id=oauth_user_id,
+            is_admin=is_admin,
+            enforce_scope=enforce_scope,
+        )
+        task = await self.task_repository.read_by_gameId_and_externalTaskId(
+            game.id, externalTaskId
+        )
+        if not task:
+            raise NotFoundError(
+                detail=(
+                    f"Task not found with externalTaskId: {externalTaskId} for "
+                    f"gameId: {gameId}"
                 )
-                for row in rows
-            ],
-            user=user_entry,
+            )
+        return TaskLeaderboard(
+            externalTaskId=task.externalTaskId,
+            **await self._build_leaderboard(
+                game,
+                task_id=task.id,
+                limit=limit,
+                offset=offset,
+                externalUserId=externalUserId,
+            ),
         )
 
     async def get_points_by_gameId(

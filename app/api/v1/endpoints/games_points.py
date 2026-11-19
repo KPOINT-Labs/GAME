@@ -29,6 +29,7 @@ from app.schema.user_points_schema import (
     AllPointsByGameWithDetails,
     GameLeaderboard,
     PointsAssignedToUser,
+    TaskLeaderboard,
 )
 from app.services.abuse_prevention_service import AbusePreventionService
 from app.services.task_service import TaskService
@@ -466,6 +467,153 @@ async def get_leaderboard_by_gameId(
     )
     return await service.get_leaderboard_by_gameId(
         gameId,
+        limit=limit,
+        offset=offset,
+        externalUserId=externalUserId,
+        **_game_access_kwargs(auth.api_key, auth.oauth_user_id, auth.is_admin),
+    )
+
+
+summary_get_task_leaderboard = "Retrieve Task Leaderboard"
+response_example_get_task_leaderboard = {
+    "externalGameId": "game-readme-001",
+    "externalTaskId": "task-login",
+    "totalUsers": 2,
+    "limit": 10,
+    "offset": 0,
+    "entries": [
+        {"rank": 1, "externalUserId": "user-123", "points": 120, "timesAwarded": 6},
+        {"rank": 2, "externalUserId": "user-456", "points": 40, "timesAwarded": 2},
+    ],
+    "user": {
+        "rank": 0,
+        "externalUserId": "user-789",
+        "points": 0,
+        "timesAwarded": 0,
+    },
+}
+
+responses_get_task_leaderboard = {
+    **responses_get_leaderboard_by_gameId,
+    200: {
+        "description": "Task leaderboard page retrieved successfully",
+        "content": {
+            "application/json": {"example": response_example_get_task_leaderboard}
+        },
+    },
+    404: {
+        "description": "Game not found, or task not found in the game",
+        "content": {
+            "application/json": {
+                "example": {
+                    "detail": "Task not found with externalTaskId: task-login for gameId: 4ce32be2-77f6-4ffc-8e07-78dc220f0521"
+                }
+            }
+        },
+    },
+}
+
+description_get_task_leaderboard = """
+Returns users ranked by their points within one task of a game.
+
+Same ranking, paging and `user` rules as `GET /games/{gameId}/leaderboard`,
+but only points awarded in this task count.
+
+### Path Parameters
+- `gameId` (`UUID`, required): Internal game identifier.
+- `externalTaskId` (`string`, required): External task identifier.
+
+### Query Parameters
+- `limit` (`int`, optional, default `10`, `1`-`100`): Page size.
+- `offset` (`int`, optional, default `0`): Number of ranked users to skip.
+- `externalUserId` (`string`, optional): Also return this user's rank in `user`.
+
+### Authentication
+- Requires either `X-API-Key` or `Authorization: Bearer <access_token>`.
+
+### Ranking
+- Users are ordered by points in this task, highest first.
+- Tied users share a rank and the next rank is skipped (`1, 2, 2, 4`).
+- Ranks are global, so they stay correct on later pages.
+- Users with no points in the task are not listed. A task with no points
+  returns an empty `entries` list, not `404`.
+
+### Requested user (`externalUserId`)
+- `user.rank` is the user's overall rank in the task (not affected by
+  `limit`/`offset`) if it is `100` or better, including ties at 100.
+- A user ranked below 100 gets `rank: 0`, with their real `points`.
+- A user with no points in the task, or who does not exist, gets
+  `rank: 0` and `points: 0`. This is not a `404`.
+- `user` is `null` when `externalUserId` is not sent.
+
+### Success (200)
+Returns:
+- `externalGameId`, `externalTaskId`
+- `totalUsers`: number of ranked users in the task (for pagination)
+- `limit`, `offset`: the page that was returned
+- `entries`: list of `rank`, `externalUserId`, `points`, `timesAwarded`
+- `user`: the requested user's row in the same shape, or `null`
+
+### Error Cases
+- `401`: missing or invalid auth credentials
+- `403`: API key rejected or inactive
+- `404`: game not found, or task not found in the game
+- `422`: malformed `gameId`, or `limit`/`offset` out of range
+- `500`: retrieval failure
+
+<sub>**Id_endpoint:** `get_task_leaderboard`</sub>
+"""  # noqa
+
+
+@router.get(
+    "/{gameId}/tasks/{externalTaskId}/leaderboard",
+    response_model=TaskLeaderboard,
+    summary=summary_get_task_leaderboard,
+    description=description_get_task_leaderboard,
+    responses=responses_get_task_leaderboard,
+    dependencies=[Depends(auth_api_key_or_oauth2)],
+)
+@inject
+async def get_task_leaderboard(
+    gameId: UUID,
+    externalTaskId: str,
+    limit: int = Query(10, ge=1, le=100, description="Page size (1-100)."),
+    offset: int = Query(0, ge=0, description="Number of ranked users to skip."),
+    externalUserId: Optional[str] = Query(
+        None, description="Also return this user's rank in `user`."
+    ),
+    service: UserPointsService = Depends(Provide[Container.user_points_service]),
+    audit: AuditLogger = Depends(audit_log("game")),
+):
+    """
+    Retrieve a page of one task's leaderboard.
+
+    Args:
+        gameId (UUID): The ID of the game.
+        externalTaskId (str): The external ID of the task.
+        limit (int): Page size.
+        offset (int): Number of ranked users to skip.
+        externalUserId (Optional[str]): User whose rank to include.
+        service (UserPointsService): Injected UserPointsService dependency.
+        audit (AuditLogger): Per-request audit logger bound to the auth context.
+
+    Returns:
+        TaskLeaderboard: Ranked users for the requested page.
+    """
+    auth = audit.auth
+    await audit.info(
+        "Leaderboard retrieval by task",
+        {
+            "gameId": str(gameId),
+            "externalTaskId": externalTaskId,
+            "limit": limit,
+            "offset": offset,
+            "externalUserId": externalUserId,
+        },
+    )
+    return await service.get_task_leaderboard(
+        gameId,
+        externalTaskId,
         limit=limit,
         offset=offset,
         externalUserId=externalUserId,

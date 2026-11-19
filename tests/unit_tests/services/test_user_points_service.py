@@ -391,7 +391,7 @@ class TestUserPointsService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.user_points_repository.get_leaderboard_by_gameId.assert_awaited_once_with(
-            "game-1", limit=2, offset=0
+            "game-1", limit=2, offset=0, taskId=None
         )
         self.assertEqual(result.externalGameId, "external-game-1")
         self.assertEqual(result.totalUsers, 5)
@@ -426,7 +426,7 @@ class TestUserPointsService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.user_points_repository.get_leaderboard_rank_of_user.assert_awaited_once_with(
-            "game-1", "u"
+            "game-1", "u", taskId=None
         )
         self.assertEqual(
             (result.user.rank, result.user.points, result.user.timesAwarded),
@@ -457,6 +457,69 @@ class TestUserPointsService(unittest.IsolatedAsyncioTestCase):
             result.user.model_dump(),
             {"rank": 0, "externalUserId": "ghost", "points": 0, "timesAwarded": 0},
         )
+
+    async def test_get_task_leaderboard_ranks_within_task(self):
+        self._leaderboard_game()
+        self.task_repository.read_by_gameId_and_externalTaskId.return_value = (
+            SimpleNamespace(id="task-1", externalTaskId="task-ext-1")
+        )
+        self.user_points_repository.get_leaderboard_by_gameId.return_value = (
+            [SimpleNamespace(rank=1, externalUserId="u1", points=9, timesAwarded=3)],
+            1,
+        )
+        self.user_points_repository.get_leaderboard_rank_of_user.return_value = (
+            SimpleNamespace(rank=101, externalUserId="u2", points=1, timesAwarded=1)
+        )
+
+        result = await self.service.get_task_leaderboard(
+            "game-1", "task-ext-1", limit=5, offset=0, externalUserId="u2"
+        )
+
+        self.task_repository.read_by_gameId_and_externalTaskId.assert_awaited_once_with(
+            "game-1", "task-ext-1"
+        )
+        self.user_points_repository.get_leaderboard_by_gameId.assert_awaited_once_with(
+            "game-1", limit=5, offset=0, taskId="task-1"
+        )
+        self.user_points_repository.get_leaderboard_rank_of_user.assert_awaited_once_with(
+            "game-1", "u2", taskId="task-1"
+        )
+        self.assertEqual(
+            (result.externalGameId, result.externalTaskId, result.totalUsers),
+            ("external-game-1", "task-ext-1", 1),
+        )
+        self.assertEqual([e.externalUserId for e in result.entries], ["u1"])
+        # Same top-100 cutoff as the game leaderboard.
+        self.assertEqual((result.user.rank, result.user.points), (0, 1))
+
+    async def test_get_task_leaderboard_raises_when_task_not_in_game(self):
+        self._leaderboard_game()
+        self.task_repository.read_by_gameId_and_externalTaskId.return_value = None
+
+        with self.assertRaises(NotFoundError):
+            await self.service.get_task_leaderboard("game-1", "missing-task")
+
+        self.user_points_repository.get_leaderboard_by_gameId.assert_not_awaited()
+
+    async def test_get_task_leaderboard_enforces_scope(self):
+        with patch(
+            "app.services.user_points.queries.get_authorized_game",
+            new=AsyncMock(return_value=SimpleNamespace(id="g", externalGameId="e")),
+        ) as authorized:
+            self.task_repository.read_by_gameId_and_externalTaskId.return_value = (
+                SimpleNamespace(id="t", externalTaskId="task-e")
+            )
+            self.user_points_repository.get_leaderboard_by_gameId.return_value = (
+                [],
+                0,
+            )
+            result = await self.service.get_task_leaderboard(
+                "g", "task-e", api_key="k", enforce_scope=True
+            )
+
+        authorized.assert_awaited_once()
+        self.game_repository.read_by_column.assert_not_awaited()
+        self.assertEqual((result.entries, result.user), ([], None))
 
     async def test_get_leaderboard_by_game_id_empty_is_not_an_error(self):
         self.game_repository.read_by_column.return_value = SimpleNamespace(
