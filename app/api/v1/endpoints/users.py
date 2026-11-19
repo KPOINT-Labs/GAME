@@ -289,14 +289,6 @@ responses_get_user_points = {
             }
         },
     },
-    404: {
-        "description": "User not found for provided external identifier",
-        "content": {
-            "application/json": {
-                "example": {"detail": "User not found by externalUserId: user-123"}
-            }
-        },
-    },
     422: {
         "description": "Validation error in path parameters",
     },
@@ -322,10 +314,12 @@ Returns a list of games where the user has point records:
 - `task[].externalTaskId`
 - `task[].points[]` with `externalUserId`, `points`, and `timesAwarded`
 
+A user with no points, or who does not exist, gets an empty list (`[]`),
+not `404`.
+
 ### Error Cases
 - `401`: missing or invalid auth credentials
-- `403`: API key rejected or inactive
-- `404`: user not found
+- `403`: API key rejected or inactive, or the user belongs to another API key
 - `422`: invalid path parameters
 - `500`: retrieval failure
 

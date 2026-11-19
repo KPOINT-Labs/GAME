@@ -345,11 +345,11 @@ responses_get_points_of_user_in_game = {
         },
     },
     404: {
-        "description": "Game or user points not found",
+        "description": "Game not found for the provided id",
         "content": {
             "application/json": {
                 "example": {
-                    "detail": "Could not find points for externalUserId = user-123 in gameId = 4ce32be2-77f6-4ffc-8e07-78dc220f0521"
+                    "detail": "Game not found by gameId: 4ce32be2-77f6-4ffc-8e07-78dc220f0521"
                 }
             }
         },
@@ -378,10 +378,13 @@ Returns a list of point aggregates for the specified user in the game:
 - `points`
 - `timesAwarded`
 
+A user with no points in the game, a user who does not exist, and a game
+with no tasks all return an empty list (`[]`), not `404`.
+
 ### Error Cases
 - `401`: missing or invalid auth credentials
 - `403`: API key rejected or inactive
-- `404`: game/user points not found
+- `404`: game not found
 - `422`: malformed path parameters
 - `500`: retrieval failure
 
@@ -1184,11 +1187,11 @@ responses_get_points_of_user_by_task_id = {
         },
     },
     404: {
-        "description": "Game/task/user combination not found",
+        "description": "Task not found in the game",
         "content": {
             "application/json": {
                 "example": {
-                    "detail": "Could not find points for externalUserId = user-123 in externalTaskId = task-login for gameId = 4ce32be2-77f6-4ffc-8e07-78dc220f0521"
+                    "detail": "Task not found with externalTaskId: task-login for gameId: 4ce32be2-77f6-4ffc-8e07-78dc220f0521"
                 }
             }
         },
@@ -1236,10 +1239,13 @@ Returns:
 - `points` (total points awarded in this task)
 - `timesAwarded` (number of scoring events for this user-task pair)
 
+A user with no points in the task, or who does not exist, gets
+`points: 0` and `timesAwarded: 0`, not `404`.
+
 ### Error Cases
 - `401`: missing or invalid auth credentials
 - `403`: API key rejected or inactive
-- `404`: no points record for the provided game/task/user combination
+- `404`: task not found in the game
 - `422`: malformed path parameters
 - `500`: retrieval failure
 
