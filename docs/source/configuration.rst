@@ -120,6 +120,12 @@ Connection pool
    * - ``DB_POOL_RECYCLE_SECONDS``
      - ``1800``
      - Recycle connections older than this (dodges server-side idle timeouts).
+   * - ``LEADERBOARD_WORK_MEM``
+     - ``32MB``
+     - Postgres ``work_mem`` for leaderboard queries only (set per transaction).
+       Keeps the per-user totals and ranking sort in memory for large games;
+       each concurrent leaderboard query can use this much per sort/hash step,
+       so size it against the pool. Empty disables it.
 
 Authentication (Keycloak)
 =========================

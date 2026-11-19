@@ -2,9 +2,10 @@ from contextlib import AbstractAsyncContextManager
 from datetime import timedelta, timezone
 from typing import Callable, Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import Integer, func, literal, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import configs
 from app.model.cohorts import UserPointsCohort
 from app.model.games import Games
 from app.model.tasks import Tasks
@@ -110,13 +111,17 @@ class UserPointsRepository(BaseRepository):
     @staticmethod
     def _leaderboard_ranked(gameId, taskId=None, cohort=None):
         """
-        Build the ranked per-user totals for a game (or one task) as a subquery.
+        Build the ranked per-user totals for a game, task or cohort.
 
-        Totals are ``SUM(points)`` per user across every task in the game, or
-        only within ``taskId`` when given. ``RANK()`` gives tied users the same
-        rank and skips the next one (1, 1, 3). ``totalUsers`` is the number of
-        users with points. Both windows cover every user, so filtering or
-        paging the subquery later never changes them.
+        Points are summed per ``userId`` first, and only those per-user totals
+        are joined to ``users`` for ``externalUserId``; joining before grouping
+        made Postgres hash-join every award against every user. ``count(*)``
+        rather than ``count(id)`` lets ``ix_user_points_task_user_created_points``
+        (which INCLUDEs ``points``) serve the scan without touching the table.
+
+        ``RANK()`` gives tied users the same rank and skips the next one
+        (1, 1, 3). ``totalUsers`` is the number of ranked users. Both windows
+        cover every user, so later filtering or paging never changes them.
 
         Args:
             gameId: Internal game identifier.
@@ -126,18 +131,18 @@ class UserPointsRepository(BaseRepository):
                 count, so users are ranked within the cohort.
 
         Returns:
-            Subquery with columns ``rank``, ``externalUserId``, ``points``,
-            ``timesAwarded`` and ``totalUsers``.
+            Select with columns ``rank``, ``externalUserId``, ``points``,
+            ``timesAwarded`` and ``totalUsers``; wrap it with ``.cte()`` or
+            ``.subquery()``.
         """
         totals = (
             select(
-                Users.externalUserId.label("externalUserId"),
+                UserPoints.userId.label("userId"),
                 func.sum(UserPoints.points).label("points"),
-                func.count(UserPoints.id).label("timesAwarded"),
+                func.count().label("timesAwarded"),
             )
             .select_from(UserPoints)
             .join(Tasks, Tasks.id == UserPoints.taskId)
-            .join(Users, Users.id == UserPoints.userId)
             .filter(Tasks.gameId == gameId)
         )
         if taskId is not None:
@@ -148,81 +153,139 @@ class UserPointsRepository(BaseRepository):
             totals = totals.join(
                 UserPointsCohort, UserPointsCohort.userPointsId == UserPoints.id
             ).filter(UserPointsCohort.cohort == cohort)
-        totals = totals.group_by(Users.id, Users.externalUserId).subquery()
-        return select(
-            func.rank().over(order_by=totals.c.points.desc()).label("rank"),
-            totals.c.externalUserId,
-            totals.c.points,
-            totals.c.timesAwarded,
-            func.count().over().label("totalUsers"),
-        ).subquery()
+        totals = totals.group_by(UserPoints.userId).subquery("totals")
+        return (
+            select(
+                func.rank().over(order_by=totals.c.points.desc()).label("rank"),
+                Users.externalUserId.label("externalUserId"),
+                totals.c.points,
+                totals.c.timesAwarded,
+                func.count().over().label("totalUsers"),
+            )
+            .select_from(totals)
+            .join(Users, Users.id == totals.c.userId)
+        )
+
+    async def _set_leaderboard_work_mem(self, session) -> None:
+        """
+        Raise ``work_mem`` for the current transaction only (Postgres).
+
+        The per-user aggregate and the ``RANK()`` sort spill to disk at the 4MB
+        default once a game has tens of thousands of ranked users. ``set_config``
+        with ``is_local`` lasts until the transaction ends, so the setting
+        never leaks into other queries on the pooled connection. Disabled when
+        ``LEADERBOARD_WORK_MEM`` is empty.
+        """
+        value = configs.LEADERBOARD_WORK_MEM
+        if value and session.get_bind().dialect.name == "postgresql":
+            await session.execute(select(func.set_config("work_mem", value, True)))
+
+    async def get_leaderboard(
+        self,
+        gameId,
+        *,
+        limit: int,
+        offset: int = 0,
+        taskId=None,
+        cohort=None,
+        externalUserId: str | None = None,
+    ):
+        """
+        Return a leaderboard page, one user's row and the total, in one query.
+
+        The ranking is computed once in a CTE (Postgres materializes a CTE
+        referenced more than once) and read three ways: the requested page,
+        the requested user's row, and one row carrying ``totalUsers`` so a page
+        past the end still reports the total. Ranks are computed over every
+        user before paging, so they stay global; within a tie, rows are ordered
+        by ``externalUserId`` so pagination is deterministic.
+
+        Args:
+            gameId: Internal game identifier.
+            limit (int): Page size (0 returns no page rows).
+            offset (int): Number of ranked rows to skip.
+            taskId: Optional internal task identifier to rank within.
+            cohort: Optional cohort tag to rank within.
+            externalUserId (str | None): User whose row to return.
+
+        Returns:
+            tuple[list, int, Row | None]: Page rows of ``(rank,
+            externalUserId, points, timesAwarded)``, the number of ranked
+            users, and the requested user's row (``None`` when not requested,
+            or when the user has no points here or does not exist).
+        """
+        ranked = self._leaderboard_ranked(gameId, taskId, cohort).cte("ranked")
+        columns = [
+            ranked.c.rank,
+            ranked.c.externalUserId,
+            ranked.c.points,
+            ranked.c.timesAwarded,
+            ranked.c.totalUsers,
+        ]
+        page = (
+            select(*columns, literal(0, Integer).label("part"))
+            .order_by(ranked.c.points.desc(), ranked.c.externalUserId)
+            .limit(limit)
+            .offset(offset)
+            .subquery("page")
+        )
+        total = (
+            select(*columns, literal(2, Integer).label("part"))
+            .limit(1)
+            .subquery("total")
+        )
+        parts = [select(page), select(total)]
+        if externalUserId is not None:
+            parts.append(
+                select(*columns, literal(1, Integer).label("part")).where(
+                    ranked.c.externalUserId == externalUserId
+                )
+            )
+        combined = union_all(*parts).subquery("combined")
+        stmt = select(combined).order_by(
+            combined.c.part, combined.c.points.desc(), combined.c.externalUserId
+        )
+        async with self.session_factory() as session:
+            await self._set_leaderboard_work_mem(session)
+            rows = (await session.execute(stmt)).all()
+        page_rows = [r for r in rows if r.part == 0]
+        user_row = next((r for r in rows if r.part == 1), None)
+        total_users = rows[0].totalUsers if rows else 0
+        return page_rows, total_users, user_row
 
     async def get_leaderboard_by_gameId(
         self, gameId, limit: int, offset: int = 0, *, taskId=None, cohort=None
     ):
         """
-        Rank users in a game by their total points across all its tasks, or
-        within a single task when ``taskId`` is given.
+        Return one leaderboard page and the number of ranked users.
 
-        Ranks are computed over every user before ``LIMIT``/``OFFSET`` is
-        applied, so they stay global across pages. Within a tie, rows are
-        ordered by ``externalUserId`` so pagination is deterministic.
-
-        Args:
-            gameId: Internal game identifier.
-            limit (int): Maximum number of rows to return.
-            offset (int): Number of ranked rows to skip.
-            taskId: Optional internal task identifier to rank within.
-            cohort: Optional cohort tag to rank within.
+        Thin wrapper over :meth:`get_leaderboard` without a requested user.
 
         Returns:
-            tuple[list, int]: Rows of ``(rank, externalUserId, points,
-            timesAwarded)`` for the requested page, and the total number of
-            ranked users in the game (or task, or cohort).
+            tuple[list, int]: Page rows and the number of ranked users.
         """
-        ranked = self._leaderboard_ranked(gameId, taskId, cohort)
-        page = (
-            select(ranked)
-            .order_by(ranked.c.points.desc(), ranked.c.externalUserId)
-            .limit(limit)
-            .offset(offset)
+        rows, total, _ = await self.get_leaderboard(
+            gameId, limit=limit, offset=offset, taskId=taskId, cohort=cohort
         )
-        async with self.session_factory() as session:
-            rows = (await session.execute(page)).all()
-            if rows:
-                return rows, rows[0].totalUsers
-            if offset == 0:
-                return rows, 0
-            # Page past the end: the window count is unavailable, so count
-            # the ranked users directly.
-            total = await session.scalar(select(func.count()).select_from(ranked))
-            return rows, total or 0
+        return rows, total
 
     async def get_leaderboard_rank_of_user(
         self, gameId, externalUserId, *, taskId=None, cohort=None
     ):
         """
-        Return one user's global leaderboard row in a game (or one task).
+        Return one user's global leaderboard row, or ``None``.
 
-        Uses the same ranking as :meth:`get_leaderboard_by_gameId`; the filter
-        is applied outside the ranking subquery, so the rank is the user's
-        position among all users, not among a filtered set.
-
-        Args:
-            gameId: Internal game identifier.
-            externalUserId (str): External identifier of the user.
-            taskId: Optional internal task identifier to rank within.
-            cohort: Optional cohort tag to rank within.
-
-        Returns:
-            Row of ``(rank, externalUserId, points, timesAwarded)``, or
-            ``None`` when the user has no points in the game, task or cohort
-            (or does not exist).
+        Thin wrapper over :meth:`get_leaderboard` with no page. The rank is the
+        user's position among all users, not among a filtered set.
         """
-        ranked = self._leaderboard_ranked(gameId, taskId, cohort)
-        stmt = select(ranked).filter(ranked.c.externalUserId == externalUserId)
-        async with self.session_factory() as session:
-            return (await session.execute(stmt)).first()
+        _, _, row = await self.get_leaderboard(
+            gameId,
+            limit=0,
+            taskId=taskId,
+            cohort=cohort,
+            externalUserId=externalUserId,
+        )
+        return row
 
     async def get_all_UserPoints_by_taskId(self, taskId):
         """
@@ -337,7 +400,7 @@ class UserPointsRepository(BaseRepository):
         in a single ``taskId IN (...)`` query instead of one round-trip per
         task, eliminating the N+1 the per-game readers used to incur. Each row
         carries ``taskId`` so callers can group the result back per task. The
-        leading column of ``ix_user_points_task_user_created`` serves the
+        leading column of ``ix_user_points_task_user_created_points`` serves the
         ``IN`` filter and the group-by.
 
         Args:

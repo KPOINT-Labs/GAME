@@ -350,6 +350,12 @@ class Configs(BaseSettings):
     DB_MAX_OVERFLOW: int = _env_to_int("DB_MAX_OVERFLOW", 40)
     DB_POOL_TIMEOUT_SECONDS: int = _env_to_int("DB_POOL_TIMEOUT_SECONDS", 30)
     DB_POOL_RECYCLE_SECONDS: int = _env_to_int("DB_POOL_RECYCLE_SECONDS", 1800)
+    # work_mem for leaderboard queries only (SET LOCAL, Postgres). The
+    # per-user aggregate and RANK() sort spill to disk at the 4MB default once
+    # a game has tens of thousands of ranked users. Each running leaderboard
+    # query may use this much per sort/hash step, so size it against
+    # DB_POOL_SIZE + DB_MAX_OVERFLOW. Empty disables it.
+    LEADERBOARD_WORK_MEM: str = os.getenv("LEADERBOARD_WORK_MEM", "32MB")
     API_KEY_HEADER_CACHE_TTL_SECONDS: int = _env_to_int(
         "API_KEY_HEADER_CACHE_TTL_SECONDS", 5
     )

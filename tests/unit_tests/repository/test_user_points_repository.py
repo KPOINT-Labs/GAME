@@ -539,3 +539,100 @@ async def test_task_leaderboard_empty_for_task_without_points(repository, db_ses
     )
 
     assert (rows, total) == ([], 0)
+
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_returns_page_user_and_total_in_one_query(
+    repository, db_session, session_factory
+):
+    game = await _seed_leaderboard(db_session)
+    statements = []
+
+    from sqlalchemy import event
+
+    engine = db_session.bind
+    listener = lambda *args: statements.append(args[2])  # noqa: E731
+    event.listen(engine.sync_engine, "before_cursor_execute", listener)
+    try:
+        rows, total, user = await repository.get_leaderboard(
+            game.id, limit=1, offset=1, externalUserId="carol"
+        )
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", listener)
+
+    assert len(statements) == 1
+    assert total == 3
+    # Page 2 of size 1 is bob (tied with alice at 15, ordered by id).
+    assert [(r.rank, r.externalUserId, r.points) for r in rows] == [(1, "bob", 15)]
+    assert (user.rank, user.externalUserId, user.points, user.timesAwarded) == (
+        3,
+        "carol",
+        7,
+        2,
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_page_past_end_and_unknown_user(repository, db_session):
+    game = await _seed_leaderboard(db_session)
+
+    rows, total, user = await repository.get_leaderboard(
+        game.id, limit=10, offset=50, externalUserId="nobody"
+    )
+
+    assert (rows, total, user) == ([], 3, None)
+
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_limit_zero_returns_only_user_row(repository, db_session):
+    game = await _seed_leaderboard(db_session)
+
+    rows, total, user = await repository.get_leaderboard(
+        game.id, limit=0, externalUserId="alice"
+    )
+
+    assert rows == []
+    assert total == 3
+    assert (user.rank, user.points) == (1, 15)
+
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_empty_game(repository, db_session):
+    game = await _seed_game(db_session, "g-lb-none")
+
+    assert await repository.get_leaderboard(
+        game.id, limit=10, externalUserId="alice"
+    ) == ([], 0, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "dialect,setting,expected_calls",
+    [("postgresql", "32MB", 1), ("sqlite", "32MB", 0), ("postgresql", "", 0)],
+)
+async def test_leaderboard_work_mem_is_transaction_local_and_postgres_only(
+    repository, monkeypatch, dialect, setting, expected_calls
+):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.repository import user_points_repository as module
+
+    monkeypatch.setattr(module.configs, "LEADERBOARD_WORK_MEM", setting)
+    session = MagicMock()
+    session.get_bind.return_value = SimpleNamespace(
+        dialect=SimpleNamespace(name=dialect)
+    )
+    session.execute = AsyncMock()
+
+    await repository._set_leaderboard_work_mem(session)
+
+    assert session.execute.await_count == expected_calls
+    if expected_calls:
+        sql = str(
+            session.execute.await_args.args[0].compile(
+                compile_kwargs={"literal_binds": True}
+            )
+        )
+        # is_local=true: the setting ends with the transaction.
+        assert "set_config('work_mem', '32MB', true)" in sql

@@ -29,11 +29,14 @@ class UserPoints(BaseModel, table=True):
             "idempotencyKey",
             name="uq_user_points_user_task_idempotency",
         ),
+        # INCLUDE (points) lets leaderboards sum points with an index-only
+        # scan; the key columns still serve the write path's lookups.
         Index(
-            "ix_user_points_task_user_created",
+            "ix_user_points_task_user_created_points",
             "taskId",
             "userId",
             "created_at",
+            postgresql_include=["points"],
         ),
     )
 
