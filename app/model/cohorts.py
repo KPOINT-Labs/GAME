@@ -11,12 +11,19 @@ on its leaderboards. They flow in two steps:
   user moves to another cohort later.
 """
 
+from datetime import datetime
+
 from pydantic import ConfigDict
 from sqlalchemy import Index, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlmodel import Column, Field, ForeignKey, String
 
-from app.model.base_model import BaseModel
+from app.model.base_model import (
+    BaseModel,
+    audit_foreign_keys,
+    created_at_field,
+    updated_at_field,
+)
 
 # Shared limits for cohort tags; also enforced by the request schemas.
 COHORT_MAX_LENGTH = 64
@@ -35,6 +42,7 @@ class UserGameCohort(BaseModel, table=True):
     """
 
     __table_args__ = (
+        *audit_foreign_keys(api_key=True, oauth_user=True),
         UniqueConstraint(
             "userId", "gameId", "cohort", name="uq_usergamecohort_user_game_cohort"
         ),
@@ -55,6 +63,10 @@ class UserGameCohort(BaseModel, table=True):
     )
     cohort: str = Field(sa_column=Column(String(COHORT_MAX_LENGTH), nullable=False))
 
+    # These tables were created with NOT NULL audit timestamps.
+    created_at: datetime = created_at_field(nullable=False)
+    updated_at: datetime = updated_at_field(nullable=False)
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -68,6 +80,7 @@ class UserPointsCohort(BaseModel, table=True):
     """
 
     __table_args__ = (
+        *audit_foreign_keys(api_key=True, oauth_user=True),
         UniqueConstraint(
             "userPointsId", "cohort", name="uq_userpointscohort_points_cohort"
         ),
@@ -84,5 +97,9 @@ class UserPointsCohort(BaseModel, table=True):
         )
     )
     cohort: str = Field(sa_column=Column(String(COHORT_MAX_LENGTH), nullable=False))
+
+    # These tables were created with NOT NULL audit timestamps.
+    created_at: datetime = created_at_field(nullable=False)
+    updated_at: datetime = updated_at_field(nullable=False)
 
     model_config = ConfigDict(from_attributes=True)

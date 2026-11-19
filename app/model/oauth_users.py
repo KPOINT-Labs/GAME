@@ -39,8 +39,20 @@ class OAuthUsers(SQLModel, table=True):
     provider: str = Field(sa_column=Column(String))
     provider_user_id: str = Field(sa_column=Column(String, unique=True))
     status: str = Field(sa_column=Column(String, nullable=True))
+    # apikey.oauth_user_id also points back at this table. use_alter breaks
+    # that cycle so SQLAlchemy can sort the tables (create_all/drop_all,
+    # Alembic autogenerate) instead of warning about "unresolvable cycles" and
+    # ignoring these foreign keys. It does not order ORM inserts: with no
+    # relationships defined, add and flush an OAuthUsers row before an ApiKey
+    # that references it. The name matches the existing database constraint.
     apiKey_used: str = Field(
-        sa_column=Column(String, ForeignKey("apikey.apiKey"), nullable=True)
+        sa_column=Column(
+            String,
+            ForeignKey(
+                "apikey.apiKey", use_alter=True, name="oauthusers_apiKey_used_fkey"
+            ),
+            nullable=True,
+        )
     )
 
     model_config = ConfigDict(from_attributes=True)

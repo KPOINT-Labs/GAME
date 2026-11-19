@@ -29,7 +29,6 @@ from app.repository.task_repository import TaskRepository
 from app.repository.uptime_logs_repository import UptimeLogsRepository
 from app.repository.user_actions_repository import UserActionsRepository
 from app.repository.user_game_config_repository import UserGameConfigRepository
-from app.repository.user_interactions_repository import UserInteractionsRepository
 from app.repository.user_points_repository import UserPointsRepository
 from app.repository.user_repository import UserRepository
 from app.repository.wallet_repository import WalletRepository
@@ -52,7 +51,6 @@ __all__ = [
     "ApiRequestsRepository",
     "KpiMetricsRepository",
     "UptimeLogsRepository",
-    "UserInteractionsRepository",
     "DashboardRepository",
     "ExportAuditLogRepository",
     "OAuthUsersRepository",

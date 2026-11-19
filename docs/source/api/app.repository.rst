@@ -28,7 +28,6 @@ Submodules
    app.repository.uptime_logs_repository
    app.repository.user_actions_repository
    app.repository.user_game_config_repository
-   app.repository.user_interactions_repository
    app.repository.user_points_repository
    app.repository.user_repository
    app.repository.wallet_repository

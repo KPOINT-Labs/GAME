@@ -9,27 +9,13 @@ from sqlmodel import SQLModel
 
 from app.core.config import configs
 from app.core.database import _to_async_url
+from app.model import import_all_models
 
-# Side-effect imports: populate SQLModel.metadata so autogenerate sees every table.
-from app.model.abuse_limit_counter import AbuseLimitCounter  # noqa: F401
-from app.model.api_key import ApiKey  # noqa: F401
-from app.model.api_requests import ApiRequests  # noqa: F401
-from app.model.cohorts import UserGameCohort, UserPointsCohort  # noqa: F401
-from app.model.game_params import GamesParams  # noqa: F401
-from app.model.games import Games  # noqa: F401
-from app.model.kpi_metrics import KpiMetrics  # noqa: F401
-from app.model.logs import Logs  # noqa: F401
-from app.model.oauth_users import OAuthUsers  # noqa: F401
-from app.model.strategy_definition import StrategyDefinition  # noqa: F401
-from app.model.task_params import TasksParams  # noqa: F401
-from app.model.tasks import Tasks  # noqa: F401
-from app.model.uptime_logs import UptimeLogs  # noqa: F401
-from app.model.user_actions import UserActions  # noqa: F401
-from app.model.user_game_config import UserGameConfig  # noqa: F401
-from app.model.user_points import UserPoints  # noqa: F401
-from app.model.users import Users  # noqa: F401
-from app.model.wallet import Wallet  # noqa: F401
-from app.model.wallet_transactions import WalletTransactions  # noqa: F401
+# Register every table on SQLModel.metadata before autogenerate/check runs.
+# This imports all of app/model dynamically: an explicit import list here
+# drifted (ExportAuditLog and StrategyExecutionLog were missing), which made
+# autogenerate propose dropping their tables.
+import_all_models()
 
 cmd_kwargs = context.get_x_argument(as_dictionary=True)
 if "ENV" in cmd_kwargs:

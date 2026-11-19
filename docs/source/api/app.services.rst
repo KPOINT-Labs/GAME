@@ -42,7 +42,6 @@ Submodules
    app.services.uptime_logs_service
    app.services.user_actions_service
    app.services.user_game_config_service
-   app.services.user_interactions_service
    app.services.user_points_analytics_service
    app.services.user_points_service
    app.services.user_service

@@ -35,7 +35,6 @@ import app.model.tasks  # noqa: F401
 import app.model.uptime_logs  # noqa: F401
 import app.model.user_actions  # noqa: F401
 import app.model.user_game_config  # noqa: F401
-import app.model.user_interactions  # noqa: F401
 import app.model.user_points  # noqa: F401
 import app.model.users  # noqa: F401
 import app.model.wallet  # noqa: F401

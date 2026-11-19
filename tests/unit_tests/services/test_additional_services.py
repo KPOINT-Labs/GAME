@@ -9,7 +9,6 @@ from app.repository.kpi_metrics_repository import KpiMetricsRepository
 from app.repository.logs_repository import LogsRepository
 from app.repository.oauth_users_repository import OAuthUsersRepository
 from app.repository.uptime_logs_repository import UptimeLogsRepository
-from app.repository.user_interactions_repository import UserInteractionsRepository
 from app.services.abuse_prevention_service import AbusePreventionService
 from app.services.api_requests_service import ApiRequestsService
 from app.services.game_params_service import GameParamsService
@@ -18,7 +17,6 @@ from app.services.logs_service import LogsService
 from app.services.oauth_users_service import OAuthUsersService
 from app.services.rate_limit_counter_backend import DatabaseRateLimitCounterBackend
 from app.services.uptime_logs_service import UptimeLogsService
-from app.services.user_interactions_service import UserInteractionsService
 
 
 def test_light_services_set_expected_repository_attributes():
@@ -28,7 +26,6 @@ def test_light_services_set_expected_repository_attributes():
     kpi_metrics_repository = MagicMock(spec=KpiMetricsRepository)
     logs_repository = MagicMock(spec=LogsRepository)
     uptime_logs_repository = MagicMock(spec=UptimeLogsRepository)
-    user_interactions_repository = MagicMock(spec=UserInteractionsRepository)
 
     abuse_counter_backend = DatabaseRateLimitCounterBackend(
         abuse_limit_counter_repository
@@ -39,7 +36,6 @@ def test_light_services_set_expected_repository_attributes():
     kpi_metrics_service = KpiMetricsService(kpi_metrics_repository)
     logs_service = LogsService(logs_repository)
     uptime_logs_service = UptimeLogsService(uptime_logs_repository)
-    user_interactions_service = UserInteractionsService(user_interactions_repository)
 
     assert abuse_prevention_service.counter_backend is abuse_counter_backend
     assert abuse_counter_backend._repository is abuse_limit_counter_repository
@@ -53,11 +49,6 @@ def test_light_services_set_expected_repository_attributes():
     assert logs_service._repository is logs_repository
     assert uptime_logs_service.uptime_logs_repository is uptime_logs_repository
     assert uptime_logs_service._repository is uptime_logs_repository
-    assert (
-        user_interactions_service.user_interactions_repository
-        is user_interactions_repository
-    )
-    assert user_interactions_service._repository is user_interactions_repository
 
 
 @pytest.mark.asyncio

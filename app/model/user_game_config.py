@@ -18,7 +18,8 @@ class UserGameConfig(BaseModel, table=True):
 
     userId: str = Field(sa_column=Column(UUID(as_uuid=True), ForeignKey("users.id")))
     gameId: str = Field(sa_column=Column(UUID(as_uuid=True), ForeignKey("games.id")))
-    experimentGroup: str = Field(sa_column=Column(String, nullable=False))
+    # Nullable in the database (never tightened by a migration).
+    experimentGroup: str = Field(sa_column=Column(String, nullable=True))
     configData: dict = Field(sa_column=Column(JSON, nullable=True))
 
     model_config = ConfigDict(from_attributes=True)
