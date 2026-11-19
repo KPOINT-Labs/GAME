@@ -596,6 +596,31 @@ class TestGamesEndpoints(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["api_key"], "api-key-1")
         self.assertTrue(kwargs["enforce_scope"])
 
+    async def test_get_task_leaderboard_passes_task_paging_and_scope(self):
+        game_id = uuid4()
+        service = AsyncMock()
+        service.get_task_leaderboard.return_value = {"leaderboard": []}
+
+        result = await games.get_task_leaderboard(
+            gameId=game_id,
+            externalTaskId="task-1",
+            limit=3,
+            offset=6,
+            externalUserId="user-9",
+            service=service,
+            audit=self._audit(api_key="api-key-1", oauth_user_id="oauth-user-1"),
+        )
+
+        self.assertEqual(result, {"leaderboard": []})
+        args, kwargs = service.get_task_leaderboard.call_args
+        self.assertEqual(args, (game_id, "task-1"))
+        self.assertEqual(
+            (kwargs["limit"], kwargs["offset"], kwargs["externalUserId"]),
+            (3, 6, "user-9"),
+        )
+        self.assertEqual(kwargs["api_key"], "api-key-1")
+        self.assertTrue(kwargs["enforce_scope"])
+
     async def test_get_points_by_game_id_with_details(self):
         game_id = uuid4()
         service = AsyncMock()

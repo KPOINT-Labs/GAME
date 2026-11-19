@@ -163,6 +163,9 @@ Points & actions (``/games/...``)
      - ``/games/{gameId}/leaderboard``
      - Users ranked by total points (``limit``/``offset`` paging; optional ``externalUserId`` adds that user's rank).
    * - ``GET``
+     - ``/games/{gameId}/tasks/{externalTaskId}/leaderboard``
+     - Users ranked by points in one task (same parameters as the game leaderboard).
+   * - ``GET``
      - ``/games/{gameId}/users/{externalUserId}/points``
      - One user's total in a game.
    * - ``GET``

@@ -292,6 +292,24 @@ class GameLeaderboard(BaseModel):
     )
 
 
+class TaskLeaderboard(GameLeaderboard):
+    """
+    A page of one task's leaderboard within a game.
+
+    Same fields as :class:`GameLeaderboard`; ``points`` and ranks only count
+    awards in this task.
+
+    Attributes:
+        externalTaskId (str): Consumer-facing task identifier.
+    """
+
+    externalTaskId: str = Field(
+        ...,
+        description="External identifier of the task.",
+        examples=["task-login"],
+    )
+
+
 class AllPointsByGameWithDetails(BaseModel):
     """
     Detailed aggregated points view for an entire game.

@@ -51,6 +51,7 @@ from app.api.v1.endpoints.games_points import (
     get_points_of_user_by_task_id,
     get_points_of_user_in_game,
     get_points_simulated_of_user_in_game,
+    get_task_leaderboard,
     user_action_in_task,
 )
 
@@ -117,6 +118,7 @@ __all__ = [
     "get_points_of_user_by_task_id",
     "get_points_of_user_in_game",
     "get_points_simulated_of_user_in_game",
+    "get_task_leaderboard",
     "get_strategy_by_gameId",
     "get_task_by_gameId_taskId",
     "get_task_list",

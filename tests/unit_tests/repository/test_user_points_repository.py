@@ -8,6 +8,7 @@ module covers the rest end-to-end against an in-memory aiosqlite engine.
 """
 
 import pytest
+from sqlalchemy import select
 
 from app.model.games import Games
 from app.model.tasks import Tasks
@@ -481,3 +482,60 @@ async def test_get_leaderboard_rank_of_user_none_without_points_in_game(
     # dave only has points in another game; "nobody" does not exist.
     assert await repository.get_leaderboard_rank_of_user(game.id, "dave") is None
     assert await repository.get_leaderboard_rank_of_user(game.id, "nobody") is None
+
+
+async def _task_id(db_session, external_task_id):
+    return (
+        await db_session.execute(
+            select(Tasks.id).filter(Tasks.externalTaskId == external_task_id)
+        )
+    ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_task_leaderboard_counts_only_that_tasks_points(repository, db_session):
+    game = await _seed_leaderboard(db_session)
+    task_1 = await _task_id(db_session, "task-lb-1")
+
+    rows, total = await repository.get_leaderboard_by_gameId(
+        game.id, limit=10, taskId=task_1
+    )
+
+    # task-lb-1: bob 15, alice 10 (her 5 in task-lb-2 is excluded); carol has
+    # points only in task-lb-2 and the other game, so she is not ranked.
+    assert total == 2
+    assert [(r.rank, r.externalUserId, r.points, r.timesAwarded) for r in rows] == [
+        (1, "bob", 15, 1),
+        (2, "alice", 10, 1),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_task_leaderboard_rank_of_user_is_scoped_to_task(repository, db_session):
+    game = await _seed_leaderboard(db_session)
+    task_2 = await _task_id(db_session, "task-lb-2")
+
+    carol = await repository.get_leaderboard_rank_of_user(
+        game.id, "carol", taskId=task_2
+    )
+    alice = await repository.get_leaderboard_rank_of_user(
+        game.id, "alice", taskId=task_2
+    )
+    bob = await repository.get_leaderboard_rank_of_user(game.id, "bob", taskId=task_2)
+
+    # task-lb-2: carol 7 (3 + 4), alice 5; bob has no points in this task.
+    assert (carol.rank, carol.points, carol.timesAwarded) == (1, 7, 2)
+    assert (alice.rank, alice.points) == (2, 5)
+    assert bob is None
+
+
+@pytest.mark.asyncio
+async def test_task_leaderboard_empty_for_task_without_points(repository, db_session):
+    game = await _seed_leaderboard(db_session)
+    empty_task = await _seed_task(db_session, game.id, "task-lb-empty")
+
+    rows, total = await repository.get_leaderboard_by_gameId(
+        game.id, limit=10, taskId=empty_task.id
+    )
+
+    assert (rows, total) == ([], 0)

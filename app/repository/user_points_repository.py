@@ -107,18 +107,20 @@ class UserPointsRepository(BaseRepository):
             return (await session.execute(stmt)).all()
 
     @staticmethod
-    def _leaderboard_ranked(gameId):
+    def _leaderboard_ranked(gameId, taskId=None):
         """
-        Build the ranked per-user totals for a game as a subquery.
+        Build the ranked per-user totals for a game (or one task) as a subquery.
 
-        Totals are ``SUM(points)`` per user across every task in the game.
-        ``RANK()`` gives tied users the same rank and skips the next one
-        (1, 1, 3). ``totalUsers`` is the number of users with points. Both
-        windows cover every user, so filtering or paging the subquery later
-        never changes them.
+        Totals are ``SUM(points)`` per user across every task in the game, or
+        only within ``taskId`` when given. ``RANK()`` gives tied users the same
+        rank and skips the next one (1, 1, 3). ``totalUsers`` is the number of
+        users with points. Both windows cover every user, so filtering or
+        paging the subquery later never changes them.
 
         Args:
             gameId: Internal game identifier.
+            taskId: Optional internal task identifier; when set, only that
+                task's points count.
 
         Returns:
             Subquery with columns ``rank``, ``externalUserId``, ``points``,
@@ -134,9 +136,10 @@ class UserPointsRepository(BaseRepository):
             .join(Tasks, Tasks.id == UserPoints.taskId)
             .join(Users, Users.id == UserPoints.userId)
             .filter(Tasks.gameId == gameId)
-            .group_by(Users.id, Users.externalUserId)
-            .subquery()
         )
+        if taskId is not None:
+            totals = totals.filter(UserPoints.taskId == taskId)
+        totals = totals.group_by(Users.id, Users.externalUserId).subquery()
         return select(
             func.rank().over(order_by=totals.c.points.desc()).label("rank"),
             totals.c.externalUserId,
@@ -145,9 +148,12 @@ class UserPointsRepository(BaseRepository):
             func.count().over().label("totalUsers"),
         ).subquery()
 
-    async def get_leaderboard_by_gameId(self, gameId, limit: int, offset: int = 0):
+    async def get_leaderboard_by_gameId(
+        self, gameId, limit: int, offset: int = 0, *, taskId=None
+    ):
         """
-        Rank users in a game by their total points across all its tasks.
+        Rank users in a game by their total points across all its tasks, or
+        within a single task when ``taskId`` is given.
 
         Ranks are computed over every user before ``LIMIT``/``OFFSET`` is
         applied, so they stay global across pages. Within a tie, rows are
@@ -157,13 +163,14 @@ class UserPointsRepository(BaseRepository):
             gameId: Internal game identifier.
             limit (int): Maximum number of rows to return.
             offset (int): Number of ranked rows to skip.
+            taskId: Optional internal task identifier to rank within.
 
         Returns:
             tuple[list, int]: Rows of ``(rank, externalUserId, points,
             timesAwarded)`` for the requested page, and the total number of
-            ranked users in the game.
+            ranked users in the game (or task).
         """
-        ranked = self._leaderboard_ranked(gameId)
+        ranked = self._leaderboard_ranked(gameId, taskId)
         page = (
             select(ranked)
             .order_by(ranked.c.points.desc(), ranked.c.externalUserId)
@@ -181,9 +188,11 @@ class UserPointsRepository(BaseRepository):
             total = await session.scalar(select(func.count()).select_from(ranked))
             return rows, total or 0
 
-    async def get_leaderboard_rank_of_user(self, gameId, externalUserId):
+    async def get_leaderboard_rank_of_user(
+        self, gameId, externalUserId, *, taskId=None
+    ):
         """
-        Return one user's global leaderboard row in a game.
+        Return one user's global leaderboard row in a game (or one task).
 
         Uses the same ranking as :meth:`get_leaderboard_by_gameId`; the filter
         is applied outside the ranking subquery, so the rank is the user's
@@ -192,13 +201,14 @@ class UserPointsRepository(BaseRepository):
         Args:
             gameId: Internal game identifier.
             externalUserId (str): External identifier of the user.
+            taskId: Optional internal task identifier to rank within.
 
         Returns:
             Row of ``(rank, externalUserId, points, timesAwarded)``, or
-            ``None`` when the user has no points in the game (or does not
-            exist).
+            ``None`` when the user has no points in the game or task (or does
+            not exist).
         """
-        ranked = self._leaderboard_ranked(gameId)
+        ranked = self._leaderboard_ranked(gameId, taskId)
         stmt = select(ranked).filter(ranked.c.externalUserId == externalUserId)
         async with self.session_factory() as session:
             return (await session.execute(stmt)).first()
