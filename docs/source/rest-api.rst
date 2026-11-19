@@ -165,6 +165,9 @@ Points & actions (``/games/...``)
    * - ``GET``
      - ``/games/{gameId}/tasks/{externalTaskId}/leaderboard``
      - Users ranked by points in one task (same parameters as the game leaderboard).
+   * -
+     - ``?cohort=<tag>`` on either leaderboard
+     - Rank only points earned while users were in that cohort. Cohorts are set by ``cohorts`` on ``POST …/action`` and copied onto each award.
    * - ``GET``
      - ``/games/{gameId}/users/{externalUserId}/points``
      - One user's total in a game.

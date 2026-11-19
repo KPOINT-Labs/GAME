@@ -24,6 +24,7 @@ from sqlmodel import SQLModel
 import app.model.abuse_limit_counter  # noqa: F401
 import app.model.api_key  # noqa: F401
 import app.model.api_requests  # noqa: F401
+import app.model.cohorts  # noqa: F401
 import app.model.game_params  # noqa: F401
 import app.model.games  # noqa: F401
 import app.model.kpi_metrics  # noqa: F401

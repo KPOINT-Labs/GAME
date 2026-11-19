@@ -582,6 +582,7 @@ class TestGamesEndpoints(unittest.IsolatedAsyncioTestCase):
             limit=5,
             offset=10,
             externalUserId="user-9",
+            cohort="school-a",
             service=service,
             audit=self._audit(api_key="api-key-1", oauth_user_id="oauth-user-1"),
         )
@@ -593,6 +594,7 @@ class TestGamesEndpoints(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["limit"], 5)
         self.assertEqual(kwargs["offset"], 10)
         self.assertEqual(kwargs["externalUserId"], "user-9")
+        self.assertEqual(kwargs["cohort"], "school-a")
         self.assertEqual(kwargs["api_key"], "api-key-1")
         self.assertTrue(kwargs["enforce_scope"])
 
@@ -607,6 +609,7 @@ class TestGamesEndpoints(unittest.IsolatedAsyncioTestCase):
             limit=3,
             offset=6,
             externalUserId="user-9",
+            cohort="grade-7",
             service=service,
             audit=self._audit(api_key="api-key-1", oauth_user_id="oauth-user-1"),
         )
@@ -618,6 +621,7 @@ class TestGamesEndpoints(unittest.IsolatedAsyncioTestCase):
             (kwargs["limit"], kwargs["offset"], kwargs["externalUserId"]),
             (3, 6, "user-9"),
         )
+        self.assertEqual(kwargs["cohort"], "grade-7")
         self.assertEqual(kwargs["api_key"], "api-key-1")
         self.assertTrue(kwargs["enforce_scope"])
 

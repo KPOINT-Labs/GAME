@@ -5,6 +5,7 @@ from typing import Callable, Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.model.cohorts import UserPointsCohort
 from app.model.games import Games
 from app.model.tasks import Tasks
 from app.model.user_points import UserPoints
@@ -107,7 +108,7 @@ class UserPointsRepository(BaseRepository):
             return (await session.execute(stmt)).all()
 
     @staticmethod
-    def _leaderboard_ranked(gameId, taskId=None):
+    def _leaderboard_ranked(gameId, taskId=None, cohort=None):
         """
         Build the ranked per-user totals for a game (or one task) as a subquery.
 
@@ -121,6 +122,8 @@ class UserPointsRepository(BaseRepository):
             gameId: Internal game identifier.
             taskId: Optional internal task identifier; when set, only that
                 task's points count.
+            cohort: Optional cohort tag; when set, only awards tagged with it
+                count, so users are ranked within the cohort.
 
         Returns:
             Subquery with columns ``rank``, ``externalUserId``, ``points``,
@@ -139,6 +142,12 @@ class UserPointsRepository(BaseRepository):
         )
         if taskId is not None:
             totals = totals.filter(UserPoints.taskId == taskId)
+        if cohort is not None:
+            # (userPointsId, cohort) is unique, so the join cannot duplicate
+            # an award.
+            totals = totals.join(
+                UserPointsCohort, UserPointsCohort.userPointsId == UserPoints.id
+            ).filter(UserPointsCohort.cohort == cohort)
         totals = totals.group_by(Users.id, Users.externalUserId).subquery()
         return select(
             func.rank().over(order_by=totals.c.points.desc()).label("rank"),
@@ -149,7 +158,7 @@ class UserPointsRepository(BaseRepository):
         ).subquery()
 
     async def get_leaderboard_by_gameId(
-        self, gameId, limit: int, offset: int = 0, *, taskId=None
+        self, gameId, limit: int, offset: int = 0, *, taskId=None, cohort=None
     ):
         """
         Rank users in a game by their total points across all its tasks, or
@@ -164,13 +173,14 @@ class UserPointsRepository(BaseRepository):
             limit (int): Maximum number of rows to return.
             offset (int): Number of ranked rows to skip.
             taskId: Optional internal task identifier to rank within.
+            cohort: Optional cohort tag to rank within.
 
         Returns:
             tuple[list, int]: Rows of ``(rank, externalUserId, points,
             timesAwarded)`` for the requested page, and the total number of
-            ranked users in the game (or task).
+            ranked users in the game (or task, or cohort).
         """
-        ranked = self._leaderboard_ranked(gameId, taskId)
+        ranked = self._leaderboard_ranked(gameId, taskId, cohort)
         page = (
             select(ranked)
             .order_by(ranked.c.points.desc(), ranked.c.externalUserId)
@@ -189,7 +199,7 @@ class UserPointsRepository(BaseRepository):
             return rows, total or 0
 
     async def get_leaderboard_rank_of_user(
-        self, gameId, externalUserId, *, taskId=None
+        self, gameId, externalUserId, *, taskId=None, cohort=None
     ):
         """
         Return one user's global leaderboard row in a game (or one task).
@@ -202,13 +212,14 @@ class UserPointsRepository(BaseRepository):
             gameId: Internal game identifier.
             externalUserId (str): External identifier of the user.
             taskId: Optional internal task identifier to rank within.
+            cohort: Optional cohort tag to rank within.
 
         Returns:
             Row of ``(rank, externalUserId, points, timesAwarded)``, or
-            ``None`` when the user has no points in the game or task (or does
-            not exist).
+            ``None`` when the user has no points in the game, task or cohort
+            (or does not exist).
         """
-        ranked = self._leaderboard_ranked(gameId, taskId)
+        ranked = self._leaderboard_ranked(gameId, taskId, cohort)
         stmt = select(ranked).filter(ranked.c.externalUserId == externalUserId)
         async with self.session_factory() as session:
             return (await session.execute(stmt)).first()

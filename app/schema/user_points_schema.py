@@ -281,6 +281,11 @@ class GameLeaderboard(BaseModel):
     entries: List[LeaderboardEntry] = Field(
         ..., description="Ranked users for this page, highest points first."
     )
+    cohort: Optional[str] = Field(
+        default=None,
+        description="The cohort the leaderboard is ranked within, or null.",
+        examples=["school-12"],
+    )
     user: Optional[LeaderboardEntry] = Field(
         default=None,
         description=(

@@ -9,6 +9,7 @@ from app.repository import (
     AbuseLimitCounterRepository,
     ApiKeyRepository,
     ApiRequestsRepository,
+    CohortRepository,
     ExportAuditLogRepository,
     GameParamsRepository,
     GameRepository,
@@ -236,6 +237,9 @@ class Container(containers.DeclarativeContainer):
     user_game_config_repository = providers.Factory(
         UserGameConfigRepository, session_factory=db.provided.session
     )
+    cohort_repository = providers.Factory(
+        CohortRepository, session_factory=db.provided.session
+    )
     dashboard_repository = providers.Factory(
         dashboard_repository.DashboardRepository,
         session_factory=db.provided.session,
@@ -350,6 +354,7 @@ class Container(containers.DeclarativeContainer):
         users_repository=user_repository,
         game_repository=game_repository,
         task_repository=task_repository,
+        cohort_repository=cohort_repository,
     )
 
     user_points_service = providers.Factory(
@@ -363,6 +368,7 @@ class Container(containers.DeclarativeContainer):
         wallet_transaction_repository=wallet_transaction_repository,
         strategy_service=strategy_service,
         game_params_repository=game_params_repository,
+        cohort_repository=cohort_repository,
     )
 
     user_service = providers.Factory(

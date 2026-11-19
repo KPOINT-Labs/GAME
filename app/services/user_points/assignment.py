@@ -152,6 +152,8 @@ class PointsAssignmentMixin(PointsPersistenceMixin):
             external_user_id=externalUserId,
             external_task_id=externalTaskId,
             idempotency_key=idempotency_key,
+            game_id=game.id,
+            cohorts=getattr(schema, "cohorts", None),
         )
 
         return AssignedPointsToExternalUserId(
@@ -317,6 +319,8 @@ class PointsAssignmentMixin(PointsPersistenceMixin):
             external_task_id=externalTaskId,
             idempotency_key=idempotency_key,
             breakdown=breakdown,
+            game_id=game.id,
+            cohorts=getattr(schema, "cohorts", None),
         )
 
         response = AssignedPointsToExternalUserId(

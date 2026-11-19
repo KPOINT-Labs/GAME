@@ -17,6 +17,7 @@ from app.core.container import Container
 from app.core.exceptions import ForbiddenError, InternalServerError
 from app.middlewares.auth_context import AuditLogger, audit_log
 from app.middlewares.authentication import auth_api_key_or_oauth2, auth_oauth2
+from app.model.cohorts import COHORT_PATTERN
 from app.schema.task_schema import (
     AddActionDidByUserInTask,
     AsignPointsToExternalUserId,
@@ -325,6 +326,7 @@ response_example_get_leaderboard_by_gameId = {
         {"rank": 2, "externalUserId": "user-456", "points": 40, "timesAwarded": 2},
         {"rank": 2, "externalUserId": "user-789", "points": 40, "timesAwarded": 4},
     ],
+    "cohort": None,
     "user": {
         "rank": 2,
         "externalUserId": "user-456",
@@ -384,6 +386,8 @@ Returns users ranked by their total points across every task in the game.
 - `limit` (`int`, optional, default `10`, `1`-`100`): Page size.
 - `offset` (`int`, optional, default `0`): Number of ranked users to skip.
 - `externalUserId` (`string`, optional): Also return this user's rank in `user`.
+- `cohort` (`string`, optional): Rank within one cohort. Only points earned
+  while the user was in that cohort count (see "Cohorts" below).
 
 ### Authentication
 - Requires either `X-API-Key` or `Authorization: Bearer <access_token>`.
@@ -403,6 +407,18 @@ Returns users ranked by their total points across every task in the game.
   `rank: 0` and `points: 0`. This is not a `404`.
 - `user` is `null` when `externalUserId` is not sent.
 
+### Cohorts (`cohort`)
+- A user action with `cohorts` sets the user's current cohorts in the game.
+  Each later points award is tagged with the cohorts the user had at that
+  moment (or with the award request's own `cohorts`).
+- With `cohort`, only awards tagged with it count. `rank`, `totalUsers` and
+  `user.rank` are all within the cohort.
+- A user who moves to another cohort keeps their earlier points in the old
+  cohort's leaderboard.
+- Points awarded before cohorts were introduced have no tags, so they do not
+  appear on cohort leaderboards.
+- `cohort` is echoed in the response (`null` when not sent).
+
 ### Success (200)
 Returns:
 - `externalGameId`
@@ -410,12 +426,13 @@ Returns:
 - `limit`, `offset`: the page that was returned
 - `entries`: list of `rank`, `externalUserId`, `points`, `timesAwarded`
 - `user`: the requested user's row in the same shape, or `null`
+- `cohort`: the cohort filter that was applied, or `null`
 
 ### Error Cases
 - `401`: missing or invalid auth credentials
 - `403`: API key rejected or inactive
 - `404`: no game found with the provided `gameId`
-- `422`: malformed `gameId`, or `limit`/`offset` out of range
+- `422`: malformed `gameId`, `limit`/`offset` out of range, or invalid `cohort`
 - `500`: retrieval failure
 
 <sub>**Id_endpoint:** `get_leaderboard_by_gameId`</sub>
@@ -438,6 +455,11 @@ async def get_leaderboard_by_gameId(
     externalUserId: Optional[str] = Query(
         None, description="Also return this user's rank in `user`."
     ),
+    cohort: Optional[str] = Query(
+        None,
+        pattern=COHORT_PATTERN,
+        description="Rank only points earned while the user was in this cohort.",
+    ),
     service: UserPointsService = Depends(Provide[Container.user_points_service]),
     audit: AuditLogger = Depends(audit_log("game")),
 ):
@@ -449,6 +471,7 @@ async def get_leaderboard_by_gameId(
         limit (int): Page size.
         offset (int): Number of ranked users to skip.
         externalUserId (Optional[str]): User whose rank to include.
+        cohort (Optional[str]): Cohort tag to rank within.
         service (UserPointsService): Injected UserPointsService dependency.
         audit (AuditLogger): Per-request audit logger bound to the auth context.
 
@@ -463,6 +486,7 @@ async def get_leaderboard_by_gameId(
             "limit": limit,
             "offset": offset,
             "externalUserId": externalUserId,
+            "cohort": cohort,
         },
     )
     return await service.get_leaderboard_by_gameId(
@@ -470,6 +494,7 @@ async def get_leaderboard_by_gameId(
         limit=limit,
         offset=offset,
         externalUserId=externalUserId,
+        cohort=cohort,
         **_game_access_kwargs(auth.api_key, auth.oauth_user_id, auth.is_admin),
     )
 
@@ -485,6 +510,7 @@ response_example_get_task_leaderboard = {
         {"rank": 1, "externalUserId": "user-123", "points": 120, "timesAwarded": 6},
         {"rank": 2, "externalUserId": "user-456", "points": 40, "timesAwarded": 2},
     ],
+    "cohort": "school-12",
     "user": {
         "rank": 0,
         "externalUserId": "user-789",
@@ -527,6 +553,8 @@ but only points awarded in this task count.
 - `limit` (`int`, optional, default `10`, `1`-`100`): Page size.
 - `offset` (`int`, optional, default `0`): Number of ranked users to skip.
 - `externalUserId` (`string`, optional): Also return this user's rank in `user`.
+- `cohort` (`string`, optional): Rank within one cohort. Only points earned
+  while the user was in that cohort count (see "Cohorts" below).
 
 ### Authentication
 - Requires either `X-API-Key` or `Authorization: Bearer <access_token>`.
@@ -546,6 +574,18 @@ but only points awarded in this task count.
   `rank: 0` and `points: 0`. This is not a `404`.
 - `user` is `null` when `externalUserId` is not sent.
 
+### Cohorts (`cohort`)
+- A user action with `cohorts` sets the user's current cohorts in the game.
+  Each later points award is tagged with the cohorts the user had at that
+  moment (or with the award request's own `cohorts`).
+- With `cohort`, only awards tagged with it count. `rank`, `totalUsers` and
+  `user.rank` are all within the cohort.
+- A user who moves to another cohort keeps their earlier points in the old
+  cohort's leaderboard.
+- Points awarded before cohorts were introduced have no tags, so they do not
+  appear on cohort leaderboards.
+- `cohort` is echoed in the response (`null` when not sent).
+
 ### Success (200)
 Returns:
 - `externalGameId`, `externalTaskId`
@@ -553,12 +593,13 @@ Returns:
 - `limit`, `offset`: the page that was returned
 - `entries`: list of `rank`, `externalUserId`, `points`, `timesAwarded`
 - `user`: the requested user's row in the same shape, or `null`
+- `cohort`: the cohort filter that was applied, or `null`
 
 ### Error Cases
 - `401`: missing or invalid auth credentials
 - `403`: API key rejected or inactive
 - `404`: game not found, or task not found in the game
-- `422`: malformed `gameId`, or `limit`/`offset` out of range
+- `422`: malformed `gameId`, `limit`/`offset` out of range, or invalid `cohort`
 - `500`: retrieval failure
 
 <sub>**Id_endpoint:** `get_task_leaderboard`</sub>
@@ -582,6 +623,11 @@ async def get_task_leaderboard(
     externalUserId: Optional[str] = Query(
         None, description="Also return this user's rank in `user`."
     ),
+    cohort: Optional[str] = Query(
+        None,
+        pattern=COHORT_PATTERN,
+        description="Rank only points earned while the user was in this cohort.",
+    ),
     service: UserPointsService = Depends(Provide[Container.user_points_service]),
     audit: AuditLogger = Depends(audit_log("game")),
 ):
@@ -594,6 +640,7 @@ async def get_task_leaderboard(
         limit (int): Page size.
         offset (int): Number of ranked users to skip.
         externalUserId (Optional[str]): User whose rank to include.
+        cohort (Optional[str]): Cohort tag to rank within.
         service (UserPointsService): Injected UserPointsService dependency.
         audit (AuditLogger): Per-request audit logger bound to the auth context.
 
@@ -609,6 +656,7 @@ async def get_task_leaderboard(
             "limit": limit,
             "offset": offset,
             "externalUserId": externalUserId,
+            "cohort": cohort,
         },
     )
     return await service.get_task_leaderboard(
@@ -617,6 +665,7 @@ async def get_task_leaderboard(
         limit=limit,
         offset=offset,
         externalUserId=externalUserId,
+        cohort=cohort,
         **_game_access_kwargs(auth.api_key, auth.oauth_user_id, auth.is_admin),
     )
 
@@ -1022,6 +1071,10 @@ Registers an explicit user action event for a task inside a game.
 - `data` (`object`, required): Structured event payload used for audit and scoring logic.
 - `description` (`string`, required): Human-readable action description.
 - `externalUserId` (`string`, required): External user identifier that triggered the action.
+- `cohorts` (`string[]`, optional): Replaces the user's current cohorts in this
+  game; later points awards are tagged with them for cohort leaderboards. Omit
+  to leave them unchanged, send `[]` to clear them. Up to 10 tags of 1-64
+  characters from `A-Z a-z 0-9 _ . : -`.
 
 ### Success (200)
 Returns the persisted action event:
@@ -1229,6 +1282,9 @@ Assigns points to one user for a specific task in a game.
 - `externalUserId` (`string`, required): External user identifier that will receive points.
 - `data` (`object`, optional): Task/event payload used by scoring strategy.
 - `isSimulated` (`boolean`, optional): If `true`, executes simulation logic when supported.
+- `cohorts` (`string[]`, optional): Cohort tags to record on this award. When
+  omitted, the award gets the user's current cohorts in the game (set by user
+  actions); `[]` records none. Same tag rules as on actions.
 
 ### Success (200)
 Returns the assigned points event:

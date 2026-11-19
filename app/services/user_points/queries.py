@@ -297,7 +297,7 @@ class PointsQueryMixin(UserPointsContext):
         )
 
     async def _build_leaderboard(
-        self, game, *, task_id, limit, offset, externalUserId
+        self, game, *, task_id, limit, offset, externalUserId, cohort=None
     ) -> dict:
         """
         Build the fields shared by game and task leaderboards.
@@ -310,6 +310,7 @@ class PointsQueryMixin(UserPointsContext):
         Args:
             game: The resolved game entity.
             task_id: Internal task id to rank within, or ``None`` for the game.
+            cohort (str | None): Cohort tag to rank within, or ``None``.
             limit (int): Page size.
             offset (int): Number of ranked users to skip.
             externalUserId (str | None): User whose rank to include.
@@ -318,12 +319,12 @@ class PointsQueryMixin(UserPointsContext):
             dict: Keyword arguments for :class:`GameLeaderboard`.
         """
         rows, total_users = await self.user_points_repository.get_leaderboard_by_gameId(
-            game.id, limit=limit, offset=offset, taskId=task_id
+            game.id, limit=limit, offset=offset, taskId=task_id, cohort=cohort
         )
         user_entry = None
         if externalUserId is not None:
             user_row = await self.user_points_repository.get_leaderboard_rank_of_user(
-                game.id, externalUserId, taskId=task_id
+                game.id, externalUserId, taskId=task_id, cohort=cohort
             )
             if user_row is None:
                 user_entry = LeaderboardEntry(
@@ -355,6 +356,7 @@ class PointsQueryMixin(UserPointsContext):
                 for row in rows
             ],
             "user": user_entry,
+            "cohort": cohort,
         }
 
     async def get_leaderboard_by_gameId(
@@ -364,6 +366,7 @@ class PointsQueryMixin(UserPointsContext):
         limit: int = 10,
         offset: int = 0,
         externalUserId: str | None = None,
+        cohort: str | None = None,
         api_key: str = None,
         oauth_user_id: str = None,
         is_admin: bool = False,
@@ -383,6 +386,7 @@ class PointsQueryMixin(UserPointsContext):
             limit (int): Page size.
             offset (int): Number of ranked users to skip.
             externalUserId (str | None): User whose rank to include.
+            cohort (str | None): Rank only awards tagged with this cohort.
             api_key (str): Caller's API key, used when ``enforce_scope``.
             oauth_user_id (str): Caller's OAuth subject, used when scoping.
             is_admin (bool): Whether the caller has the admin role.
@@ -408,6 +412,7 @@ class PointsQueryMixin(UserPointsContext):
                 limit=limit,
                 offset=offset,
                 externalUserId=externalUserId,
+                cohort=cohort,
             )
         )
 
@@ -419,6 +424,7 @@ class PointsQueryMixin(UserPointsContext):
         limit: int = 10,
         offset: int = 0,
         externalUserId: str | None = None,
+        cohort: str | None = None,
         api_key: str = None,
         oauth_user_id: str = None,
         is_admin: bool = False,
@@ -437,6 +443,7 @@ class PointsQueryMixin(UserPointsContext):
             limit (int): Page size.
             offset (int): Number of ranked users to skip.
             externalUserId (str | None): User whose rank to include.
+            cohort (str | None): Rank only awards tagged with this cohort.
             api_key (str): Caller's API key, used when ``enforce_scope``.
             oauth_user_id (str): Caller's OAuth subject, used when scoping.
             is_admin (bool): Whether the caller has the admin role.
@@ -473,6 +480,7 @@ class PointsQueryMixin(UserPointsContext):
                 limit=limit,
                 offset=offset,
                 externalUserId=externalUserId,
+                cohort=cohort,
             ),
         )
 

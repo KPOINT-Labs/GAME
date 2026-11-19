@@ -12,6 +12,7 @@ from app.repository.abuse_limit_counter_repository import AbuseLimitCounterRepos
 from app.repository.api_requests_repository import ApiRequestsRepository
 from app.repository.apikey_repository import ApiKeyRepository
 from app.repository.base_repository import BaseRepository
+from app.repository.cohort_repository import CohortRepository
 from app.repository.dashboard_repository import DashboardRepository
 from app.repository.export_audit_log_repository import ExportAuditLogRepository
 from app.repository.game_params_repository import GameParamsRepository
@@ -36,6 +37,7 @@ from app.repository.wallet_transaction_repository import WalletTransactionReposi
 
 __all__ = [
     "BaseRepository",
+    "CohortRepository",
     "AbuseLimitCounterRepository",
     "GameRepository",
     "TaskParamsRepository",

@@ -391,7 +391,7 @@ class TestUserPointsService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.user_points_repository.get_leaderboard_by_gameId.assert_awaited_once_with(
-            "game-1", limit=2, offset=0, taskId=None
+            "game-1", limit=2, offset=0, taskId=None, cohort=None
         )
         self.assertEqual(result.externalGameId, "external-game-1")
         self.assertEqual(result.totalUsers, 5)
@@ -426,7 +426,7 @@ class TestUserPointsService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.user_points_repository.get_leaderboard_rank_of_user.assert_awaited_once_with(
-            "game-1", "u", taskId=None
+            "game-1", "u", taskId=None, cohort=None
         )
         self.assertEqual(
             (result.user.rank, result.user.points, result.user.timesAwarded),
@@ -479,10 +479,10 @@ class TestUserPointsService(unittest.IsolatedAsyncioTestCase):
             "game-1", "task-ext-1"
         )
         self.user_points_repository.get_leaderboard_by_gameId.assert_awaited_once_with(
-            "game-1", limit=5, offset=0, taskId="task-1"
+            "game-1", limit=5, offset=0, taskId="task-1", cohort=None
         )
         self.user_points_repository.get_leaderboard_rank_of_user.assert_awaited_once_with(
-            "game-1", "u2", taskId="task-1"
+            "game-1", "u2", taskId="task-1", cohort=None
         )
         self.assertEqual(
             (result.externalGameId, result.externalTaskId, result.totalUsers),
@@ -491,6 +491,37 @@ class TestUserPointsService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([e.externalUserId for e in result.entries], ["u1"])
         # Same top-100 cutoff as the game leaderboard.
         self.assertEqual((result.user.rank, result.user.points), (0, 1))
+
+    async def test_leaderboards_pass_cohort_through_and_echo_it(self):
+        self._leaderboard_game()
+        self.task_repository.read_by_gameId_and_externalTaskId.return_value = (
+            SimpleNamespace(id="task-1", externalTaskId="task-ext-1")
+        )
+        self.user_points_repository.get_leaderboard_rank_of_user.return_value = None
+
+        game_board = await self.service.get_leaderboard_by_gameId(
+            "game-1", cohort="school-a", externalUserId="u"
+        )
+        task_board = await self.service.get_task_leaderboard(
+            "game-1", "task-ext-1", cohort="school-a"
+        )
+
+        calls = self.user_points_repository.get_leaderboard_by_gameId.call_args_list
+        self.assertEqual(
+            [(c.kwargs["taskId"], c.kwargs["cohort"]) for c in calls],
+            [(None, "school-a"), ("task-1", "school-a")],
+        )
+        self.assertEqual(
+            self.user_points_repository.get_leaderboard_rank_of_user.call_args.kwargs[
+                "cohort"
+            ],
+            "school-a",
+        )
+        self.assertEqual(
+            (game_board.cohort, task_board.cohort), ("school-a", "school-a")
+        )
+        # A user with no points in the cohort gets zeros, as without a cohort.
+        self.assertEqual((game_board.user.rank, game_board.user.points), (0, 0))
 
     async def test_get_task_leaderboard_raises_when_task_not_in_game(self):
         self._leaderboard_game()
