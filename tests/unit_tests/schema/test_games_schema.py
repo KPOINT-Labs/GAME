@@ -261,3 +261,29 @@ def test_list_tasks_with_users():
     tasks_with_users = ListTasksWithUsers(**data)
     assert tasks_with_users.gameId == data["gameId"]
     assert tasks_with_users.tasks == data["tasks"]
+
+
+def test_post_create_game_timezone_defaults_to_utc_and_is_validated():
+    import pytest
+    from pydantic import ValidationError
+
+    base = {"externalGameId": "tz_game", "platform": "web"}
+
+    assert PostCreateGame(**base).timezone == "UTC"
+    assert PostCreateGame(**base, timezone=None).timezone == "UTC"
+    assert PostCreateGame(**base, timezone="Asia/Kolkata").timezone == "Asia/Kolkata"
+    for bad in ("Mars/Olympus", "+05:30", ""):
+        with pytest.raises(ValidationError):
+            PostCreateGame(**base, timezone=bad)
+
+
+def test_patch_game_timezone_is_optional_and_validated():
+    import pytest
+    from pydantic import ValidationError
+
+    from app.schema.games_schema import PatchGame
+
+    assert PatchGame().timezone is None  # unchanged
+    assert PatchGame(timezone="Europe/Madrid").timezone == "Europe/Madrid"
+    with pytest.raises(ValidationError):
+        PatchGame(timezone="Nowhere/Land")

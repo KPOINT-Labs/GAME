@@ -260,3 +260,38 @@ async def test_list_external_ids_maps_ids_to_external(repository, db_session):
 async def test_list_external_ids_empty_for_no_ids(repository):
     assert await repository.list_external_ids([]) == {}
     assert await repository.list_external_ids([None]) == {}
+
+
+@pytest.mark.asyncio
+async def test_game_timezone_defaults_to_utc_and_is_returned(repository, db_session):
+    game = await _seed_game(db_session, external_id="tz-default")
+
+    by_id = await repository.get_game_by_id(game.id)
+    listed = await repository.get_all_games(PostFindGame(), is_admin=True)
+
+    assert game.timezone == "UTC"
+    assert by_id.timezone == "UTC"
+    assert [g.timezone for g in listed.items if g.externalGameId == "tz-default"] == [
+        "UTC"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_game_timezone_is_stored_and_patchable(repository, db_session):
+    game = Games(
+        externalGameId="tz-kolkata",
+        platform="web",
+        strategyId="default",
+        timezone="Asia/Kolkata",
+    )
+    db_session.add(game)
+    await db_session.commit()
+
+    assert (await repository.get_game_by_id(game.id)).timezone == "Asia/Kolkata"
+
+    await repository.patch_game_by_id(game.id, PatchGame(timezone="Europe/Madrid"))
+    assert (await repository.get_game_by_id(game.id)).timezone == "Europe/Madrid"
+
+    # Omitting timezone in a PATCH leaves it unchanged.
+    await repository.patch_game_by_id(game.id, PatchGame(platform="mobile"))
+    assert (await repository.get_game_by_id(game.id)).timezone == "Europe/Madrid"

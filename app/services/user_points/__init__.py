@@ -7,12 +7,14 @@ class ``app.services.user_points_service.UserPointsService`` keeps an
 unchanged constructor and method surface.
 """
 
+from app.services.user_points.activity import PointsActivityMixin
 from app.services.user_points.assignment import PointsAssignmentMixin
 from app.services.user_points.persistence import PointsPersistenceMixin
 from app.services.user_points.queries import PointsQueryMixin
 from app.services.user_points.simulation import PointsSimulationMixin
 
 __all__ = [
+    "PointsActivityMixin",
     "PointsAssignmentMixin",
     "PointsPersistenceMixin",
     "PointsQueryMixin",

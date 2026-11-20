@@ -46,6 +46,7 @@ class TestGameService(unittest.IsolatedAsyncioTestCase):
             externalGameId=external_game_id,
             strategyId=strategy_id,
             platform=platform,
+            timezone="UTC",
             created_at=created_at,
             updated_at=updated_at,
         )
@@ -54,6 +55,7 @@ class TestGameService(unittest.IsolatedAsyncioTestCase):
             "externalGameId": external_game_id,
             "strategyId": strategy_id,
             "platform": platform,
+            "timezone": "UTC",
             "created_at": created_at,
             "updated_at": updated_at,
         }
@@ -348,6 +350,7 @@ class TestGameService(unittest.IsolatedAsyncioTestCase):
             "externalGameId": "same_game",
             "strategyId": "default",
             "platform": "web",
+            "timezone": "UTC",
             "params": [{"id": param_id, "key": "k", "value": "v"}],
         }
         game = self._build_game(
@@ -358,6 +361,7 @@ class TestGameService(unittest.IsolatedAsyncioTestCase):
             externalGameId="same_game",
             strategyId="default",
             platform="web",
+            timezone="UTC",
             params=[UpdateGameParams(id=param_id, key="k", value="v")],
         )
         self.game_repository.read_by_id.return_value = game
@@ -759,7 +763,9 @@ class TestGameServiceDuplicate(unittest.IsolatedAsyncioTestCase):
     async def test_duplicate_game_deep_copies_params_and_tasks(self):
         game_id = uuid4()
         new_game_id = uuid4()
-        source = SimpleNamespace(id=game_id, platform="web", strategyId="default")
+        source = SimpleNamespace(
+            id=game_id, platform="web", strategyId="default", timezone="Asia/Kolkata"
+        )
         self.game_repository.read_by_id.return_value = source
         self.game_params_repository.read_by_column.return_value = [
             SimpleNamespace(key="weight", value=5),
@@ -790,6 +796,8 @@ class TestGameServiceDuplicate(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(created_schema.externalGameId, "copy_game")
         self.assertEqual(created_schema.platform, "web")
         self.assertEqual(created_schema.strategyId, "default")
+        # The copy keeps the source game's reference timezone.
+        self.assertEqual(created_schema.timezone, "Asia/Kolkata")
         self.assertEqual(len(created_schema.params), 1)
         self.assertEqual(created_schema.params[0].key, "weight")
         # One task recreated, with its param copied.

@@ -625,6 +625,32 @@ class TestGamesEndpoints(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["api_key"], "api-key-1")
         self.assertTrue(kwargs["enforce_scope"])
 
+    async def test_get_user_activity_passes_period_and_scope(self):
+        from datetime import date
+
+        game_id = uuid4()
+        service = AsyncMock()
+        service.get_user_activity.return_value = {"activity": []}
+
+        result = await games.get_user_activity(
+            gameId=game_id,
+            externalUserId="user_9",
+            from_=date(2026, 11, 1),
+            to=date(2026, 11, 30),
+            service=service,
+            audit=self._audit(api_key="api-key-1", oauth_user_id="oauth-user-1"),
+        )
+
+        self.assertEqual(result, {"activity": []})
+        args, kwargs = service.get_user_activity.call_args
+        self.assertEqual(args, (game_id, "user_9"))
+        self.assertEqual(
+            (kwargs["from_date"], kwargs["to_date"]),
+            (date(2026, 11, 1), date(2026, 11, 30)),
+        )
+        self.assertEqual(kwargs["api_key"], "api-key-1")
+        self.assertTrue(kwargs["enforce_scope"])
+
     async def test_get_points_by_game_id_with_details(self):
         game_id = uuid4()
         service = AsyncMock()

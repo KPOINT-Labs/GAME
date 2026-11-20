@@ -34,7 +34,8 @@ Create a game
    {
      "externalGameId": "game-001",
      "platform": "web",
-     "strategyId": "default"
+     "strategyId": "default",
+     "timezone": "Asia/Kolkata"
    }
 
 * ``externalGameId`` - *your* identifier for the campaign (unique per key).
@@ -42,6 +43,23 @@ Create a game
 * ``strategyId`` - the **default** strategy for the game's tasks. Use a
   built-in id (e.g. ``default``) or a custom one (``custom:<uuid>``). Omit to
   fall back to ``default``.
+* ``timezone`` - the game's **reference timezone**, an IANA name such as
+  ``Asia/Kolkata`` or ``Europe/Madrid``. Omit to use ``UTC``. Unknown names,
+  offsets (``+05:30``) and abbreviations (``IST``) are rejected with ``422``.
+
+Game timezone
+^^^^^^^^^^^^^
+
+Everything calendar-based in a game uses its timezone: which local day an
+award falls on (so streaks of consecutive days roll over at the game's local
+midnight) and time-of-day slots such as morning or evening (GREENCROWD's time
+diversity). Timestamps in responses stay in UTC; only the grouping into days
+and hours is local.
+
+You can change it later with ``PATCH /games/{gameId}`` (``{"timezone": ...}``).
+The new timezone applies to past awards too, because days are worked out when
+they are needed rather than stored, so a change can shift a user's current
+streak. Duplicating a game copies its timezone.
 
 The response includes the internal ``gameId`` (UUID) - address the game by
 this id thereafter.
@@ -218,6 +236,8 @@ GAME exposes aggregates at every granularity:
      - add ``?cohort=school-12`` (cohorts are set by sending ``cohorts`` on a user action)
    * - One user's total in a game
      - ``GET /games/{gameId}/users/{externalUserId}/points``
+   * - One user's active days and streaks in a game
+     - ``GET /games/{gameId}/users/{externalUserId}/activity`` (see below)
    * - All users' points in a task
      - ``GET /games/{gameId}/tasks/{externalTaskId}/points``
    * - …with per-award detail
@@ -231,6 +251,54 @@ GAME exposes aggregates at every granularity:
 
 Aggregates carry both ``points`` (total) and ``timesAwarded`` (how many
 scoring events produced it).
+
+Activity and streaks
+--------------------
+
+For streak UIs, ``/activity`` returns a user's **activity calendar** in a
+game: the days they were active and their streaks of consecutive days.
+
+.. code-block:: bash
+
+   GET /api/v1/games/{gameId}/users/user_123/activity?from=2026-11-01&to=2026-11-30
+
+.. code-block:: json
+
+   {
+     "externalGameId": "game-001",
+     "externalUserId": "user_123",
+     "timezone": "Asia/Kolkata",
+     "basis": "awards",
+     "from": "2026-11-01",
+     "to": "2026-11-30",
+     "activeDays": [
+       {"date": "2026-11-02", "points": 30, "awards": 3},
+       {"date": "2026-11-03", "points": 10, "awards": 1}
+     ],
+     "streaks": {
+       "current": 2,
+       "longest": 2,
+       "runs": [{"start": "2026-11-02", "end": "2026-11-03", "length": 2}]
+     }
+   }
+
+* A day is **active** when the user received at least one **points award** in
+  the game that day (``basis: "awards"``). Recording an action does not make a
+  day active.
+* Days are local days in the **game's timezone** (see `Game timezone`_).
+* ``from``/``to`` are optional: the default is the 30 days ending today in the
+  game's timezone, and a period can span at most 366 days.
+* ``streaks.current`` counts consecutive active days ending today, or
+  yesterday if there is no award yet today. It covers all history, so it can
+  be longer than the period.
+* Days are counted with the same rule as GREENCROWD's streak bonus. This
+  endpoint counts awards on **all** of the game's tasks, while GREENCROWD
+  counts only awards on tasks that use GREENCROWD, so the two streaks match
+  when every task in the game uses GREENCROWD.
+* ``streaks.runs`` and ``streaks.longest`` cover only the period; a run that
+  continues past either edge is cut at the edge.
+* An unknown user, or one with no awards, gets an empty calendar rather than
+  ``404``.
 
 Wallets & the economy
 =====================

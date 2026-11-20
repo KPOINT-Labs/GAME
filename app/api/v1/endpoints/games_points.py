@@ -1,5 +1,6 @@
 import logging
 import traceback
+from datetime import date
 from typing import List, Optional
 from uuid import UUID
 
@@ -31,6 +32,7 @@ from app.schema.user_points_schema import (
     GameLeaderboard,
     PointsAssignedToUser,
     TaskLeaderboard,
+    UserActivity,
 )
 from app.services.abuse_prevention_service import AbusePreventionService
 from app.services.task_service import TaskService
@@ -786,6 +788,157 @@ async def get_points_of_user_in_game(
     return await service.get_points_of_user_in_game(
         gameId,
         externalUserId,
+        **_game_access_kwargs(auth.api_key, auth.oauth_user_id, auth.is_admin),
+    )
+
+
+summary_get_user_activity = "Retrieve User Activity (Active Days and Streaks)"
+response_example_get_user_activity = {
+    "externalGameId": "game-readme-001",
+    "externalUserId": "user_123",
+    "timezone": "Asia/Kolkata",
+    "basis": "awards",
+    "from": "2026-11-01",
+    "to": "2026-11-30",
+    "activeDays": [
+        {"date": "2026-11-02", "points": 30, "awards": 3},
+        {"date": "2026-11-03", "points": 10, "awards": 1},
+        {"date": "2026-11-27", "points": 20, "awards": 2},
+        {"date": "2026-11-28", "points": 10, "awards": 1},
+    ],
+    "streaks": {
+        "current": 2,
+        "longest": 2,
+        "runs": [
+            {"start": "2026-11-02", "end": "2026-11-03", "length": 2},
+            {"start": "2026-11-27", "end": "2026-11-28", "length": 2},
+        ],
+    },
+}
+
+responses_get_user_activity = {
+    200: {
+        "description": "Activity calendar retrieved successfully",
+        "content": {
+            "application/json": {"example": response_example_get_user_activity}
+        },
+    },
+    401: {"description": "Unauthorized: missing/invalid credentials"},
+    403: {"description": "Forbidden: invalid API key or no access to this game"},
+    404: {"description": "Game not found for the provided id"},
+    422: {
+        "description": (
+            "Malformed dates, 'from' after 'to', or a period longer than 366 days"
+        ),
+    },
+    500: {"description": "Internal server error while retrieving activity"},
+}
+
+description_get_user_activity = """
+Returns a user's **activity calendar** in a game: the days they were active,
+and their streaks of consecutive active days.
+
+This is a day-by-day summary, not an event feed (recorded actions are at
+`/users/{externalUserId}/actions`).
+
+### What counts as an active day
+- A day on which the user received **at least one points award** in this game
+  (`basis: "awards"`). Recording an action without an award does not count.
+- Days are **local days in the game's timezone** (`timezone` in the response;
+  set on the game, default UTC).
+
+### Path Parameters
+- `gameId` (`UUID`, required): Internal game identifier.
+- `externalUserId` (`string`, required): External user identifier.
+
+### Query Parameters
+- `from` (`date`, optional): First day of the period, `YYYY-MM-DD`.
+  Defaults to 29 days before `to` (a 30-day period).
+- `to` (`date`, optional): Last day of the period. Defaults to today in the
+  game's timezone.
+- The period can span at most 366 days.
+
+### Authentication
+- Requires either `X-API-Key` or `Authorization: Bearer <access_token>`.
+
+### Success (200)
+- `activeDays`: one entry per active day in the period, oldest first, with
+  the day's `points` and number of `awards`.
+- `streaks.current`: consecutive active days ending **today**, or yesterday
+  if there is no award yet today. It is counted over all history, so it can
+  be longer than the period, and it does not depend on `from`/`to`.
+- Day counting uses the same rule as GREENCROWD's streak bonus, but this
+  endpoint counts awards on **all** of the game's tasks, while GREENCROWD
+  counts only awards on tasks that use GREENCROWD. The two streaks match
+  when every task in the game uses GREENCROWD.
+- `streaks.runs`: runs of consecutive active days within the period, oldest
+  first. A run that continues past either edge of the period is cut at the
+  edge.
+- `streaks.longest`: the longest run within the period.
+- An unknown user, or one with no awards, gets an empty calendar and zero
+  streaks (not `404`).
+
+### Error Cases
+- `401`: missing or invalid auth credentials
+- `403`: API key rejected or no access to this game
+- `404`: game not found
+- `422`: malformed dates, `from` after `to`, or a period longer than 366 days
+- `500`: retrieval failure
+
+<sub>**Id_endpoint:** `get_user_activity`</sub>
+"""  # noqa
+
+
+@router.get(
+    "/{gameId}/users/{externalUserId}/activity",
+    response_model=UserActivity,
+    summary=summary_get_user_activity,
+    description=description_get_user_activity,
+    responses=responses_get_user_activity,
+    dependencies=[Depends(auth_api_key_or_oauth2)],
+)
+@inject
+async def get_user_activity(
+    gameId: UUID,
+    externalUserId: str,
+    from_: Optional[date] = Query(
+        None, alias="from", description="First day of the period (YYYY-MM-DD)."
+    ),
+    to: Optional[date] = Query(
+        None, description="Last day of the period (YYYY-MM-DD); default today."
+    ),
+    service: UserPointsService = Depends(Provide[Container.user_points_service]),
+    audit: AuditLogger = Depends(audit_log("game")),
+):
+    """
+    Retrieve a user's active days and streaks in a game.
+
+    Args:
+        gameId (UUID): The ID of the game.
+        externalUserId (str): The external user ID.
+        from_ (Optional[date]): First day of the period (``from`` in the URL).
+        to (Optional[date]): Last day of the period.
+        service (UserPointsService): Injected UserPointsService dependency.
+        audit (AuditLogger): Per-request audit logger bound to the auth context.
+
+    Returns:
+        UserActivity: The user's activity calendar for the period.
+    """
+    auth = audit.auth
+    await audit.info(
+        "User activity retrieval",
+        {
+            "gameId": str(gameId),
+            "externalUserId": externalUserId,
+            "from": str(from_) if from_ else None,
+            "to": str(to) if to else None,
+        },
+    )
+    return await service.get_user_activity(
+        gameId,
+        externalUserId,
+        from_date=from_,
+        to_date=to,
         **_game_access_kwargs(auth.api_key, auth.oauth_user_id, auth.is_admin),
     )
 
