@@ -171,8 +171,7 @@ the model is detailed in :doc:`security`.
 Recording explicit actions
 --------------------------
 
-Some games award points as a side effect of an action event rather than a
-direct points call:
+Record what a user did, independently of scoring:
 
 .. code-block:: bash
 
@@ -181,11 +180,20 @@ direct points call:
      "typeAction": "TASK_COMPLETED",
      "data": { "durationSeconds": 84, "source": "mobile-app" },
      "description": "User completed the task from mobile flow",
-     "externalUserId": "user-123"
+     "externalUserId": "user-123",
+     "cohorts": ["school-12"]
    }
 
-This persists a ``UserActions`` record (audit + scoring input) and, when the
-game requires it, drives point assignment.
+This persists a ``UserActions`` record. Actions feed the dashboard, the
+``user-interactions`` export and audit; when ``cohorts`` is sent it also
+replaces the user's cohorts in the game, which later awards are tagged with
+for cohort leaderboards.
+
+.. important::
+
+   Recording an action **does not award points** and no strategy reads it.
+   To score an event, call ``POST /games/{gameId}/tasks/{externalTaskId}/points``
+   (see `Awarding points`_), passing whatever the strategy needs in ``data``.
 
 Reading points
 ==============

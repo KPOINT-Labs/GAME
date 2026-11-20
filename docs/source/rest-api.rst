@@ -152,7 +152,7 @@ Points & actions (``/games/...``)
      - **Award points** to a user.
    * - ``POST``
      - ``/games/{gameId}/tasks/{externalTaskId}/action``
-     - Record a user action (may award points).
+     - Record a user action (audit, analytics, cohorts). Does **not** award points.
    * - ``GET``
      - ``/games/{gameId}/points``
      - All points in a game.

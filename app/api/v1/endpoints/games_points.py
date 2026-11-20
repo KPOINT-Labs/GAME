@@ -1059,6 +1059,9 @@ responses_user_action = {
 description_user_action = """
 Registers an explicit user action event for a task inside a game.
 
+Recording an action does **not** award points; use
+`POST /games/{gameId}/tasks/{externalTaskId}/points` to score an event.
+
 ### Path Parameters
 - `gameId` (`UUID`, required): Internal game identifier.
 - `externalTaskId` (`string`, required): External task identifier.
@@ -1068,7 +1071,7 @@ Registers an explicit user action event for a task inside a game.
 
 ### Request Body
 - `typeAction` (`string`, required): Business action/event type.
-- `data` (`object`, required): Structured event payload used for audit and scoring logic.
+- `data` (`object`, required): Structured event payload, stored for audit, analytics and exports.
 - `description` (`string`, required): Human-readable action description.
 - `externalUserId` (`string`, required): External user identifier that triggered the action.
 - `cohorts` (`string[]`, optional): Replaces the user's current cohorts in this
