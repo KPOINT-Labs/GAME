@@ -289,9 +289,12 @@ game: the days they were active and their streaks of consecutive days.
 * ``from``/``to`` are optional: the default is the 30 days ending today in the
   game's timezone, and a period can span at most 366 days.
 * ``streaks.current`` counts consecutive active days ending today, or
-  yesterday if there is no award yet today. It uses the same rule as
-  GREENCROWD's streak bonus and covers all history, so it can be longer than
-  the period.
+  yesterday if there is no award yet today. It covers all history, so it can
+  be longer than the period.
+* Days are counted with the same rule as GREENCROWD's streak bonus. This
+  endpoint counts awards on **all** of the game's tasks, while GREENCROWD
+  counts only awards on tasks that use GREENCROWD, so the two streaks match
+  when every task in the game uses GREENCROWD.
 * ``streaks.runs`` and ``streaks.longest`` cover only the period; a run that
   continues past either edge is cut at the edge.
 * An unknown user, or one with no awards, gets an empty calendar rather than

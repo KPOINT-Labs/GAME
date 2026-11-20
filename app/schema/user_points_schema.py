@@ -360,8 +360,10 @@ class ActivityStreaks(BaseModel):
         ...,
         description=(
             "Consecutive active days ending today, or yesterday if there is "
-            "no award yet today (the same rule GREENCROWD scores with). "
-            "Counted over all history, so it can be longer than the period."
+            "no award yet today, counting awards on all of the game's tasks. "
+            "Counted over all history, so it can be longer than the period. "
+            "Uses GREENCROWD's day-counting rule; it matches GREENCROWD's "
+            "streak bonus when every task in the game uses GREENCROWD."
         ),
         examples=[4],
     )

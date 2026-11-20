@@ -1,9 +1,11 @@
 """A user's activity calendar in a game: active days and streaks.
 
-A day is *active* when the user received at least one points award on it,
-counted in the game's timezone. Streaks use the same rule as GREENCROWD's
-streak bonus (``app.util.streaks``), so the streak a client shows is the one
-scoring uses.
+A day is *active* when the user received at least one points award on any
+of the game's tasks, counted in the game's timezone. Streaks use the same
+day-counting rule as GREENCROWD's streak bonus (``app.util.streaks``).
+GREENCROWD only sees awards on its own tasks, so in a game that mixes
+strategies its streak can be shorter than this one; they match when every
+task in the game uses GREENCROWD.
 """
 
 import datetime

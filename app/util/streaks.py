@@ -1,8 +1,9 @@
 """Streaks of consecutive active days.
 
-Shared by GREENCROWD scoring (``DIM_S``) and the activity endpoint, so the
-streak a client shows is the streak scoring uses. Dates are the game's local
-days (see ``app.util.timezones``).
+Shared by GREENCROWD scoring (``DIM_S``) and the activity endpoint so both
+count days the same way. They can still see different awards: GREENCROWD
+only its own tasks, the activity endpoint all of a game's tasks. Dates are
+the game's local days (see ``app.util.timezones``).
 """
 
 from __future__ import annotations

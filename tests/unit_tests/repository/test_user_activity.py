@@ -268,3 +268,21 @@ async def test_scope_is_enforced(service, db_session):
         )
 
     authorized.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_awards_on_all_of_the_games_tasks_count(service, db_session):
+    """The calendar is game-level: tasks on different strategies all count
+    (GREENCROWD's own streak only sees its tasks; see the endpoint docs)."""
+    s = await _setup(db_session, timezone="UTC")
+    other_strategy_task = await _add(
+        db_session,
+        Tasks(externalTaskId="t2", gameId=s.game.id, strategyId="greencrowdStrategy"),
+    )
+    await _award(db_session, s.alice, s.task, _utc(11, 17, 6))  # "default" task
+    await _award(db_session, s.alice, other_strategy_task, _utc(11, 16, 6))
+
+    result = await service.get_user_activity(s.game.id, "alice")
+
+    assert [d.date for d in result.activeDays] == [D(2026, 11, 16), D(2026, 11, 17)]
+    assert result.streaks.current == 2

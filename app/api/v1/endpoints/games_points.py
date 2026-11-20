@@ -865,9 +865,12 @@ This is a day-by-day summary, not an event feed (recorded actions are at
 - `activeDays`: one entry per active day in the period, oldest first, with
   the day's `points` and number of `awards`.
 - `streaks.current`: consecutive active days ending **today**, or yesterday
-  if there is no award yet today. This is the same rule GREENCROWD's streak
-  bonus uses. It is counted over all history, so it can be longer than the
-  period, and it does not depend on `from`/`to`.
+  if there is no award yet today. It is counted over all history, so it can
+  be longer than the period, and it does not depend on `from`/`to`.
+- Day counting uses the same rule as GREENCROWD's streak bonus, but this
+  endpoint counts awards on **all** of the game's tasks, while GREENCROWD
+  counts only awards on tasks that use GREENCROWD. The two streaks match
+  when every task in the game uses GREENCROWD.
 - `streaks.runs`: runs of consecutive active days within the period, oldest
   first. A run that continues past either edge of the period is cut at the
   edge.
