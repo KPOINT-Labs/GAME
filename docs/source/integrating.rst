@@ -287,7 +287,8 @@ game: the days they were active and their streaks of consecutive days.
   day active.
 * Days are local days in the **game's timezone** (see `Game timezone`_).
 * ``from``/``to`` are optional: the default is the 30 days ending today in the
-  game's timezone, and a period can span at most 366 days.
+  game's timezone, and a period can span at most **45 days** (longer periods
+  return ``422``; request several periods to cover more).
 * ``streaks.current`` counts consecutive active days ending today, or
   yesterday if there is no award yet today. It covers all history, so it can
   be longer than the period.

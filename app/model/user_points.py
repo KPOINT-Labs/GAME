@@ -38,6 +38,15 @@ class UserPoints(BaseModel, table=True):
             "created_at",
             postgresql_include=["points"],
         ),
+        # A user's awards by time (``/activity``: active days and the current
+        # streak). INCLUDE (taskId, points) keeps those reads index-only; the
+        # game filter joins tasks on taskId.
+        Index(
+            "ix_userpoints_user_created",
+            "userId",
+            "created_at",
+            postgresql_include=["taskId", "points"],
+        ),
     )
 
     points: int = Field(sa_column=Column(Integer))

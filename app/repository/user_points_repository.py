@@ -2,7 +2,7 @@ from contextlib import AbstractAsyncContextManager
 from datetime import timedelta, timezone
 from typing import Callable, Optional
 
-from sqlalchemy import Integer, func, literal, select, union_all
+from sqlalchemy import Date, Integer, cast, func, literal, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import configs
@@ -12,6 +12,7 @@ from app.model.tasks import Tasks
 from app.model.user_points import UserPoints
 from app.model.users import Users
 from app.repository.base_repository import BaseRepository
+from app.util.timezones import local_datetime, zone_of
 
 
 class UserPointsRepository(BaseRepository):
@@ -287,37 +288,75 @@ class UserPointsRepository(BaseRepository):
         )
         return row
 
-    async def get_award_times_of_user_in_game(self, gameId, userId, start, end):
+    async def get_active_days_of_user_in_game(
+        self, gameId, userId, tz_name: str, start, end
+    ):
         """
-        Return ``(created_at, points)`` for one user's awards in a game.
+        One row per local day on which a user received awards in a game.
 
-        Only awards with ``start <= created_at < end`` are returned; callers
-        pass the UTC bounds of a range of the game's local days. Served by
-        ``ix_user_points_task_user_created_points`` (task, user, created_at,
-        INCLUDE points) without touching the table.
+        Days are local days in ``tz_name`` (the game's IANA timezone). Only
+        awards with ``start <= created_at < end`` count; callers pass the UTC
+        bounds of a range of local days so the time-range filter can use
+        ``ix_userpoints_user_created`` ("userId", created_at INCLUDE "taskId",
+        points) as an index-only range scan.
+
+        On PostgreSQL the grouping happens in SQL (``created_at AT TIME ZONE``
+        the game's timezone, which handles daylight-saving changes), so at
+        most one row per day leaves the database however many awards a day
+        has. Other dialects (SQLite in the unit tests) have no timezone
+        database, so rows are grouped in Python with ``zoneinfo``.
 
         Args:
             gameId: Internal game identifier.
             userId: Internal user identifier.
-            start (datetime): Inclusive lower bound (timezone-aware).
-            end (datetime): Exclusive upper bound (timezone-aware).
+            tz_name (str): The game's IANA timezone name.
+            start (datetime): Inclusive lower bound (timezone-aware, UTC).
+            end (datetime): Exclusive upper bound (timezone-aware, UTC).
 
         Returns:
-            list: Rows of ``(created_at, points)``.
+            list[tuple[date, int, int]]: ``(day, points, awards)`` per active
+            day, oldest first.
         """
-        stmt = (
-            select(UserPoints.created_at, UserPoints.points)
-            .select_from(UserPoints)
-            .join(Tasks, Tasks.id == UserPoints.taskId)
-            .filter(
-                Tasks.gameId == gameId,
-                UserPoints.userId == userId,
-                UserPoints.created_at >= start,
-                UserPoints.created_at < end,
-            )
+        filters = (
+            Tasks.gameId == gameId,
+            UserPoints.userId == userId,
+            UserPoints.created_at >= start,
+            UserPoints.created_at < end,
         )
         async with self.session_factory() as session:
-            return (await session.execute(stmt)).all()
+            if session.get_bind().dialect.name == "postgresql":
+                day = cast(func.timezone(tz_name, UserPoints.created_at), Date).label(
+                    "day"
+                )
+                stmt = (
+                    select(
+                        day,
+                        func.coalesce(func.sum(UserPoints.points), 0),
+                        func.count(),
+                    )
+                    .select_from(UserPoints)
+                    .join(Tasks, Tasks.id == UserPoints.taskId)
+                    .filter(*filters)
+                    .group_by(day)
+                    .order_by(day)
+                )
+                return [
+                    (d, int(p), int(n)) for d, p, n in (await session.execute(stmt))
+                ]
+            stmt = (
+                select(UserPoints.created_at, UserPoints.points)
+                .select_from(UserPoints)
+                .join(Tasks, Tasks.id == UserPoints.taskId)
+                .filter(*filters)
+            )
+            rows = (await session.execute(stmt)).all()
+        zone = zone_of(tz_name)
+        days: dict = {}
+        for created_at, points in rows:
+            key = local_datetime(created_at, zone).date()
+            total, count = days.get(key, (0, 0))
+            days[key] = (total + (points or 0), count + 1)
+        return [(d, p, n) for d, (p, n) in sorted(days.items())]
 
     async def get_all_UserPoints_by_taskId(self, taskId):
         """
