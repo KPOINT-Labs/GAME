@@ -1,0 +1,99 @@
+# Prometheus alert rules for the GAME HTTP API (latency and 5xx rate).
+# Mirrors docker/prometheus/rules/api-rules.yml; keep the two in sync.
+# Mount into the Prometheus rule_files path alongside game-dsl-prometheus-rules.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: game-api-prometheus-rules
+  labels:
+    app: game
+    component: api
+data:
+  api-rules.yml: |
+    groups:
+      - name: game-api
+        interval: 30s
+        rules:
+          - alert: ApiRouteLatencyP95High
+            expr: |
+              (
+                histogram_quantile(
+                  0.95,
+                  sum by (le, handler) (
+                    rate(http_request_duration_seconds_bucket[5m])
+                  )
+                ) > 1
+              )
+              and
+              (
+                sum by (handler) (rate(http_requests_total[5m])) > 0.05
+              )
+            for: 10m
+            labels:
+              severity: warning
+              service: game
+              component: api
+            annotations:
+              summary: >-
+                p95 latency above 1s on {{ $labels.handler }}
+              description: |
+                The 95th percentile of http_request_duration_seconds for
+                {{ $labels.handler }} has been above 1 second for 10 minutes
+                (current value: {{ $value | humanizeDuration }}).
+                Dashboard: Grafana > GAME > API Overview.
+
+          - alert: ApiActivityLatencyP95High
+            expr: |
+              (
+                histogram_quantile(
+                  0.95,
+                  sum by (le) (
+                    rate(http_request_duration_seconds_bucket{handler="/api/v1/games/{gameId}/users/{externalUserId}/activity"}[5m])
+                  )
+                ) > 0.5
+              )
+              and
+              (
+                sum(rate(http_requests_total{handler="/api/v1/games/{gameId}/users/{externalUserId}/activity"}[5m])) > 0.05
+              )
+            for: 10m
+            labels:
+              severity: warning
+              service: game
+              component: api
+              endpoint: activity
+            annotations:
+              summary: >-
+                /activity p95 latency above 500ms
+              description: |
+                The 95th percentile of GET
+                /games/{gameId}/users/{externalUserId}/activity has been above
+                500 ms for 10 minutes (current value:
+                {{ $value | humanizeDuration }}). Its cost grows with the user's
+                awards in the requested period and with long current streaks.
+                Dashboard: Grafana > GAME > API Overview > User activity.
+
+          - alert: ApiRoute5xxRateHigh
+            expr: |
+              (
+                sum by (handler) (rate(http_requests_total{status="5xx"}[10m]))
+                /
+                sum by (handler) (rate(http_requests_total[10m]))
+              ) > 0.05
+              and
+              (
+                sum by (handler) (rate(http_requests_total[10m])) > 0.05
+              )
+            for: 10m
+            labels:
+              severity: critical
+              service: game
+              component: api
+            annotations:
+              summary: >-
+                More than 5% of requests to {{ $labels.handler }} fail with 5xx
+              description: |
+                {{ $value | humanizePercentage }} of requests to
+                {{ $labels.handler }} returned a 5xx status over the last 10
+                minutes. Check the API logs and Sentry.
+                Dashboard: Grafana > GAME > API Overview.

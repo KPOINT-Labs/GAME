@@ -45,6 +45,7 @@ You get out of the box:
 
 * **HTTP metrics** - request counts, durations, and status classes
   (status codes are grouped; untemplated paths and ``/metrics`` are excluded).
+  See `HTTP latency per route`_.
 * **DSL metrics** - custom counters defined in ``app/engine/dsl_metrics.py``,
   which live in the default ``prometheus_client`` registry and are therefore
   exported automatically:
@@ -68,6 +69,89 @@ You get out of the box:
 
 The bundled Compose stack ships a pre-configured Prometheus that scrapes these
 without extra wiring.
+
+HTTP latency per route
+----------------------
+
+Every API route is timed in ``http_request_duration_seconds``, labelled with
+the route **template** (``handler``, e.g.
+``/api/v1/games/{gameId}/users/{externalUserId}/activity``) and ``method``.
+Its buckets are set in ``app/main.py`` (``HTTP_LATENCY_BUCKETS``): 5, 10, 25,
+50, 100, 250 and 500 ms, then 1, 2.5, 5 and 10 s. They are fine below 100 ms,
+where most endpoints answer, so per-route percentiles are meaningful:
+
+.. code-block:: text
+
+   histogram_quantile(0.95, sum by (le) (rate(
+     http_request_duration_seconds_bucket{handler="/api/v1/games/{gameId}/users/{externalUserId}/activity"}[5m])))
+
+Other per-route series: ``http_requests_total`` (by ``status`` class) and
+``http_response_size_bytes``. ``http_request_duration_highr_seconds`` has
+finer buckets but no ``handler`` label, so it only describes the API as a
+whole.
+
+Dashboards and alerts
+---------------------
+
+Grafana loads two dashboards from ``docker/grafana/dashboards`` into the
+**GAME** folder:
+
+* **API Overview** (``game-api-overview``) - p95/p99 latency, request rate and
+  5xx ratio per route (filterable by route), the 10 slowest routes, and a
+  row for ``/activity`` (p50/p95/p99, requests by status, average response
+  size).
+* **DSL Overview** - custom-strategy execution latency, errors and cost.
+
+Prometheus loads alert rules from ``docker/prometheus/rules`` (mirrored for
+Kubernetes in ``kubernetes/configmaps/*-prometheus-rules.yaml``):
+
+.. list-table::
+   :header-rows: 1
+   :widths: 32 68
+
+   * - Alert (``api-rules.yml``)
+     - Fires when, for 10 minutes
+   * - ``ApiRouteLatencyP95High``
+     - A route's p95 latency is above 1 s.
+   * - ``ApiActivityLatencyP95High``
+     - ``/activity``'s p95 latency is above 500 ms.
+   * - ``ApiRoute5xxRateHigh``
+     - More than 5% of a route's requests fail with 5xx (``critical``).
+
+Each requires at least 0.05 requests/s on the route, so one slow request on an
+otherwise idle route does not page.
+
+``/activity`` baseline
+^^^^^^^^^^^^^^^^^^^^^^
+
+Measured on Postgres 16 with 1M awards in the game (50,000 users), one
+uvicorn worker, requests in sequence, from the server-side histogram:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 52 24 24
+
+   * - Scenario
+     - p50
+     - p95
+   * - Unknown user
+     - ~17 ms
+     - ~24 ms
+   * - Typical user (90 awards), 30 days
+     - ~18 ms
+     - ~24 ms
+   * - Heavy user (10,000 awards, 400-day streak), 30 days
+     - ~90 ms
+     - ~235 ms
+   * - Heavy user, 366 days
+     - ~135 ms
+     - ~245 ms
+
+The cost grows with the awards the user has in the period and with the
+length of their current streak; the database part is a few milliseconds, the
+rest is per-award work in the app. With ten concurrent requests on a single
+worker, heavy-user requests queue behind each other (p95 around 1 s), so run
+several workers in production.
 
 Logging
 =======
@@ -195,3 +279,7 @@ What to alert on
        fine).
    * - HTTP ``5xx`` rate
      - Backend errors; correlate with Sentry and the ``Logs`` audit trail.
+       Alerted by ``ApiRoute5xxRateHigh``.
+   * - HTTP p95 latency per route
+     - Slow endpoints; alerted by ``ApiRouteLatencyP95High`` (1 s) and, for
+       ``/activity``, ``ApiActivityLatencyP95High`` (500 ms).

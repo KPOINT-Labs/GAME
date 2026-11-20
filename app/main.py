@@ -9,7 +9,7 @@ import toml
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import RedirectResponse
-from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_fastapi_instrumentator import Instrumentator, metrics
 from starlette.middleware.cors import CORSMiddleware
 
 from app.api.v1.routes import routers as v1_routers
@@ -17,6 +17,12 @@ from app.core.config import configs
 from app.core.container import Container
 from app.middlewares.error_handler import CatchUnhandledErrorsMiddleware
 from app.util.class_object import singleton
+
+# Buckets (seconds) for the per-route ``http_request_duration_seconds``
+# histogram. Fine below 100ms, where most endpoints answer, so p50/p95/p99
+# per route are meaningful; still bounded to keep the series count per route
+# small. Used by the "API Overview" Grafana dashboard and api-rules alerts.
+HTTP_LATENCY_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
 
 
 def _configure_logging() -> None:
@@ -276,7 +282,14 @@ class AppCreator:
                 should_group_status_codes=True,
                 should_ignore_untemplated=True,
                 excluded_handlers=["/metrics"],
-            ).instrument(self.app).expose(
+            ).add(
+                # Same metrics as the library default, but with per-route
+                # latency buckets fine enough for p50/p95/p99 (the default
+                # is only 0.1s / 0.5s / 1s). See HTTP_LATENCY_BUCKETS.
+                metrics.default(latency_lowr_buckets=HTTP_LATENCY_BUCKETS)
+            ).instrument(
+                self.app
+            ).expose(
                 self.app,
                 endpoint="/metrics",
                 include_in_schema=False,
