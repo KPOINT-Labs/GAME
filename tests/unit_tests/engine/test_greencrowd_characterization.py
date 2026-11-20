@@ -31,7 +31,12 @@ LBE_MULTIPLIER = 0.5
 class _FrozenDateTime(datetime.datetime):
     @classmethod
     def now(cls, tz=None):
-        return FIXED_NOW if tz is not None else FIXED_NOW.replace(tzinfo=None)
+        # Like the real datetime.now(tz): the same instant, expressed in tz.
+        return (
+            FIXED_NOW.astimezone(tz)
+            if tz is not None
+            else FIXED_NOW.replace(tzinfo=None)
+        )
 
 
 @pytest.fixture

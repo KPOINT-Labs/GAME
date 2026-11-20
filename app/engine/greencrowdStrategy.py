@@ -20,6 +20,7 @@ from app.engine.strategy_registry import register_strategy
 from app.schema.task_schema import SimulatedTaskPoints
 from app.util.add_log import add_log
 from app.util.calculate_hash_simulated_strategy import calculate_hash_simulated_strategy
+from app.util.timezones import local_datetime, zone_of
 
 logger = logging.getLogger(__name__)
 
@@ -27,16 +28,20 @@ logger = logging.getLogger(__name__)
 DIMENSION_KEYS = ("DIM_BP", "DIM_LBE", "DIM_TD", "DIM_PP", "DIM_S")
 
 
-def _utc_date(timestamp):
-    """Calendar date of ``timestamp`` in UTC (naive values are taken as UTC)."""
-    if timestamp.tzinfo is not None:
-        timestamp = timestamp.astimezone(datetime.timezone.utc)
-    return timestamp.date()
+def _local_date(timestamp, zone=None):
+    """
+    Calendar date of ``timestamp`` in the game's timezone ``zone`` (UTC when
+    ``None``). Naive values are taken as UTC, as they are stored.
+    """
+    return local_datetime(timestamp, zone or zone_of(None)).date()
 
 
 def count_consecutive_active_days(active_dates, today):
     """
     Length of the user's current streak of consecutive active days.
+
+    Days are the game's local days: callers pass ``active_dates`` and
+    ``today`` already converted to the game's timezone.
 
     Counts back one day at a time from ``today`` while each day has activity.
     If ``today`` has no activity yet, counting starts from yesterday (grace
@@ -189,9 +194,14 @@ def get_dynamic_values_from_tasks(
     user,
     variable_basic_points,
     variable_lbe_multiplier,
+    zone=None,
 ):
     """
     Calculates dynamic values based on user participation in tasks.
+
+    Calendar logic uses the game's timezone ``zone`` (UTC when ``None``): an
+    award's time-of-day slot (``DIM_TD``) and which day it counts towards for
+    the streak (``DIM_S``) are taken in the game's local time.
 
     Args:
         task (object): The task object.
@@ -264,10 +274,11 @@ def get_dynamic_values_from_tasks(
         "Evening": (18, 24),
     }
     slot_counts = defaultdict(int)
+    zone = zone or zone_of(None)
 
     for r in all_records:
         if r.taskId == task.id:
-            record_hour = r.created_at.hour
+            record_hour = local_datetime(r.created_at, zone).hour
             for slot, (start, end) in time_slots.items():
                 if start <= record_hour < end:
                     slot_counts[slot] += 1
@@ -276,7 +287,7 @@ def get_dynamic_values_from_tasks(
     current_slot = next(
         slot
         for slot, (start, end) in time_slots.items()
-        if start <= datetime.datetime.now(datetime.timezone.utc).hour < end
+        if start <= datetime.datetime.now(zone).hour < end
     )
     total_other_slots = sum(slot_counts.values()) - slot_counts[current_slot]
     dim_td_value = (
@@ -325,8 +336,8 @@ def get_dynamic_values_from_tasks(
 
     #  DIM_S
     consecutive_days = count_consecutive_active_days(
-        (_utc_date(r.created_at) for r in all_records if r.userId == user_id),
-        datetime.datetime.now(datetime.timezone.utc).date(),
+        (_local_date(r.created_at, zone) for r in all_records if r.userId == user_id),
+        datetime.datetime.now(zone).date(),
     )
     dim_s_value = round(variable_basic_points * (2 ** (consecutive_days / 5)))
 
@@ -546,6 +557,7 @@ class GREENCROWDGamificationStrategy(BaseStrategy):  # noqa
                 "task": dict,            # single task object
                 "allTasks": list,        # all tasks
                 "externalUserId": str,   # the user the simulation is run for
+                "gameTimezone": str,     # optional IANA name; default UTC
                 "gameParams": dict,      # optional {key: value} game params;
                                          # reads variable_streak_bonus_cap
             }
@@ -650,6 +662,7 @@ class GREENCROWDGamificationStrategy(BaseStrategy):  # noqa
                 user,
                 self.variable_basic_points,
                 self.variable_lbe_multiplier,
+                zone=zone_of(data_to_simulate.get("gameTimezone")),
             )
             DIM_BP = dynamic_calculated.get("DIM_BP")
             DIM_LBE = dynamic_calculated.get("DIM_LBE")

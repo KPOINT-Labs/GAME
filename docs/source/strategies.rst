@@ -106,7 +106,8 @@ guaranteed stable across class renames:
      - Tuned for the SOCIO-BEE citizen-science scenario.
    * - ``greencrowdStrategy``
      - 1.0.0
-     - Tuned for the GREENCROWD platform.
+     - Tuned for the GREENCROWD platform. Its streak days (``DIM_S``) and
+       time-of-day slots (``DIM_TD``) use the game's timezone.
    * - ``greengageStrategy``
      - 0.0.1
      - Tuned for the GREENGAGE scenario.

@@ -2,6 +2,7 @@ from pydantic import ConfigDict
 from sqlmodel import Column, Field, ForeignKey, String
 
 from app.model.base_model import BaseModel
+from app.util.timezones import DEFAULT_GAME_TIMEZONE
 
 
 class Games(BaseModel, table=True):
@@ -20,6 +21,9 @@ class Games(BaseModel, table=True):
         externalGameId (str): Unique external game ID.
         strategyId (str): Strategy identifier, defaults to "default".
         platform (str): Platform (e.g., PC, PlayStation).
+        timezone (str): IANA timezone name (default ``UTC``). Reference
+            timezone for the game's calendar logic, e.g. which local day an
+            award falls on for streaks, and time-of-day slots.
 
     Methods:
         __str__: Returns a string representation.
@@ -36,6 +40,15 @@ class Games(BaseModel, table=True):
     # schemas still require/default them, so new rows always have values.
     strategyId: str = Field(sa_column=Column(String, nullable=True, default="default"))
     platform: str = Field(sa_column=Column(String, nullable=True))
+    timezone: str = Field(
+        default=DEFAULT_GAME_TIMEZONE,
+        sa_column=Column(
+            String(64),
+            nullable=False,
+            default=DEFAULT_GAME_TIMEZONE,
+            server_default=DEFAULT_GAME_TIMEZONE,
+        ),
+    )
     apiKey_used: str = Field(
         sa_column=Column(String, ForeignKey("apikey.apiKey"), nullable=True)
     )

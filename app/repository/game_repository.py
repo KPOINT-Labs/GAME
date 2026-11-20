@@ -155,6 +155,7 @@ class GameRepository(BaseRepository):
                     created_at=game.created_at,
                     externalGameId=game.externalGameId,
                     platform=game.platform,
+                    timezone=game.timezone,
                     params=params_by_game.get(game.id, []),
                 )
                 for game in game_rows
@@ -210,6 +211,7 @@ class GameRepository(BaseRepository):
                 updated_at=game.updated_at,
                 externalGameId=game.externalGameId,
                 platform=game.platform,
+                timezone=game.timezone,
                 params=game_params,
             )
 

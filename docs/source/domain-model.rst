@@ -65,6 +65,7 @@ can be hard-deleted without cascading away its history.
            string      externalGameId   UK
            string      strategyId
            string      platform
+           string      timezone
            string      apiKey_used      FK
            string      oauth_user_id    FK
        }
@@ -362,7 +363,9 @@ Campaign hierarchy
    * - **Games**
      - A campaign/project. Carries an ``externalGameId`` (your identifier), a
        ``platform``, and a ``strategyId`` - the *default* scoring strategy for
-       its tasks. If unset, the built-in ``default`` strategy applies.
+       its tasks. If unset, the built-in ``default`` strategy applies. Its
+       ``timezone`` (IANA name, default ``UTC``) is the reference for the
+       game's calendar logic, such as streak days and time-of-day slots.
    * - **GameParams**
      - Key/value configuration attached to a game (e.g. base points). These
        feed strategy variables.

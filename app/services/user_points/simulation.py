@@ -182,6 +182,8 @@ class PointsSimulationMixin(UserPointsContext):
                     "allTasks": tasks,
                     "externalUserId": externalUserId,
                     "gameParams": game_params,
+                    # Reference timezone for the strategy's calendar logic.
+                    "gameTimezone": getattr(game, "timezone", None),
                 }
                 try:
                     task_simulation = strategy_instance.simulate_strategy(

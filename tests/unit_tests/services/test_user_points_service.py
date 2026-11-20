@@ -1235,6 +1235,16 @@ class TestUserPointsService(unittest.IsolatedAsyncioTestCase):
             {"variable_streak_bonus_cap": "25", "variable_basic_points": "10"},
         )
 
+    async def test_get_points_simulated_of_user_in_game_passes_game_timezone(self):
+        captured = self._setup_single_task_simulation()
+        self.game_repository.read_by_column.return_value = SimpleNamespace(
+            id="game-1", externalGameId="external-game-1", timezone="Asia/Kolkata"
+        )
+
+        await self.service.get_points_simulated_of_user_in_game("game-1", "user_1")
+
+        self.assertEqual(captured[0]["gameTimezone"], "Asia/Kolkata")
+
     async def test_get_points_simulated_of_user_in_game_without_params_repository(
         self,
     ):

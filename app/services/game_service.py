@@ -160,6 +160,7 @@ class GameService(BaseService):
                 externalGameId=game.externalGameId,
                 strategyId=game.strategyId,
                 platform=game.platform,
+                timezone=game.timezone,
                 gameId=gameId,
                 created_at=game.created_at,
                 updated_at=game.updated_at,
@@ -355,6 +356,7 @@ class GameService(BaseService):
             externalGameId=externalGameId,
             platform=source.platform,
             strategyId=source.strategyId,
+            timezone=source.timezone,
             params=copied_params or None,
         )
         created = await self.create(new_game_schema, api_key, oauth_user_id)
@@ -550,6 +552,7 @@ class GameService(BaseService):
             externalGameId=game_dict["externalGameId"],
             strategyId=strategyId,
             platform=game_dict["platform"],
+            timezone=game_dict.get("timezone"),
             params=updated_params,
             gameId=gameId,
             message=f"Game with gameId: {gameId} updated successfully",

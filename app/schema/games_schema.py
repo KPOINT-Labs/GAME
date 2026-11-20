@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schema.base_schema import FindBase, ModelBaseInfo, SearchOptions
 from app.schema.games_params_schema import (
@@ -12,6 +12,7 @@ from app.schema.games_params_schema import (
 )
 from app.schema.task_schema import TasksWithUsers
 from app.util.schema import AllOptional
+from app.util.timezones import DEFAULT_GAME_TIMEZONE, validate_timezone_name
 
 
 class BaseGame(BaseModel):
@@ -43,6 +44,7 @@ class BaseGameResult(BaseModel):
         externalGameId (Optional[str]): Client-side game identifier.
         strategyId (Optional[str]): Strategy identifier bound to this game.
         platform (Optional[str]): Platform name.
+        timezone (Optional[str]): The game's reference IANA timezone.
         params (Optional[List[BaseFindGameParams]]): Effective game parameters.
     """
 
@@ -76,6 +78,11 @@ class BaseGameResult(BaseModel):
         description="Target platform for the game.",
         examples=["web"],
     )
+    timezone: Optional[str] = Field(
+        default=None,
+        description="IANA timezone name used as the game's reference timezone for calendar logic (streak days, time-of-day slots).",
+        examples=["Asia/Kolkata"],
+    )
     params: Optional[List[BaseFindGameParams]] = Field(
         default=None,
         description="Resolved game-level strategy parameters.",
@@ -92,6 +99,7 @@ class PostCreateGame(BaseModel):
         externalGameId (str): External game identifier in the client domain.
         platform (str): Target platform.
         strategyId (Optional[str]): Strategy identifier (`default` when omitted).
+        timezone (Optional[str]): Reference IANA timezone (`UTC` when omitted).
         params (Optional[List[CreateGameParams]]): Initial game parameters.
         apiKey_used (Optional[str]): API key used for request attribution.
         oauth_user_id (Optional[str]): OAuth subject used for request attribution.
@@ -112,6 +120,14 @@ class PostCreateGame(BaseModel):
         description="Strategy identifier for scoring behavior.",
         examples=["default"],
     )
+    timezone: Optional[str] = Field(
+        default=DEFAULT_GAME_TIMEZONE,
+        description=(
+            "IANA timezone name used as the game's reference timezone for calendar logic (streak days, time-of-day slots). "
+            "Defaults to UTC."
+        ),
+        examples=["Asia/Kolkata"],
+    )
     params: Optional[List[CreateGameParams]] = Field(
         default=None,
         description="Initial strategy/game parameters.",
@@ -128,12 +144,19 @@ class PostCreateGame(BaseModel):
         examples=["3c95c2d7-1ce8-4ea0-b35f-6dfd19127f35"],
     )
 
+    @field_validator("timezone")
+    @classmethod
+    def _valid_timezone(cls, value):
+        """Reject unknown IANA names; ``None`` means the UTC default."""
+        return validate_timezone_name(value) or DEFAULT_GAME_TIMEZONE
+
     def example():
         """Return a sample creation payload used as the OpenAPI example."""
         return {
             "externalGameId": "game-readme-001",
             "platform": "web",
             "strategyId": "default",
+            "timezone": "Asia/Kolkata",
             "params": [{"key": "variable_basic_points", "value": 10}],
         }
 
@@ -146,6 +169,7 @@ class PatchGame(BaseModel):
         externalGameId (Optional[str]): External game identifier.
         strategyId (Optional[str]): Strategy identifier.
         platform (Optional[str]): Platform name.
+        timezone (Optional[str]): Updated reference IANA timezone.
         params (Optional[List[UpdateGameParams]]): Updated game parameters.
     """
 
@@ -164,10 +188,25 @@ class PatchGame(BaseModel):
         description="Updated platform value.",
         examples=["mobile"],
     )
+    timezone: Optional[str] = Field(
+        default=None,
+        description=(
+            "Updated reference IANA timezone. Calendar logic (streak days, "
+            "time-of-day slots) uses it from then on, including for past "
+            "awards, so changing it can change a user's current streak."
+        ),
+        examples=["Europe/Madrid"],
+    )
     params: Optional[List[UpdateGameParams]] = Field(
         default=None,
         description="Updated game parameters.",
     )
+
+    @field_validator("timezone")
+    @classmethod
+    def _valid_timezone(cls, value):
+        """Reject unknown IANA names; ``None`` leaves the timezone unchanged."""
+        return validate_timezone_name(value)
 
 
 class DuplicateGame(BaseModel):
@@ -240,6 +279,11 @@ class FindGameById(ModelBaseInfo):
         default=None,
         description="Platform associated with the game.",
         examples=["web"],
+    )
+    timezone: Optional[str] = Field(
+        default=None,
+        description="The game's reference IANA timezone.",
+        examples=["Asia/Kolkata"],
     )
     params: Optional[List[UpdateGameParams]] = Field(
         default=None,

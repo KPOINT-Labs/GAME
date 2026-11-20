@@ -34,7 +34,8 @@ Create a game
    {
      "externalGameId": "game-001",
      "platform": "web",
-     "strategyId": "default"
+     "strategyId": "default",
+     "timezone": "Asia/Kolkata"
    }
 
 * ``externalGameId`` - *your* identifier for the campaign (unique per key).
@@ -42,6 +43,23 @@ Create a game
 * ``strategyId`` - the **default** strategy for the game's tasks. Use a
   built-in id (e.g. ``default``) or a custom one (``custom:<uuid>``). Omit to
   fall back to ``default``.
+* ``timezone`` - the game's **reference timezone**, an IANA name such as
+  ``Asia/Kolkata`` or ``Europe/Madrid``. Omit to use ``UTC``. Unknown names,
+  offsets (``+05:30``) and abbreviations (``IST``) are rejected with ``422``.
+
+Game timezone
+^^^^^^^^^^^^^
+
+Everything calendar-based in a game uses its timezone: which local day an
+award falls on (so streaks of consecutive days roll over at the game's local
+midnight) and time-of-day slots such as morning or evening (GREENCROWD's time
+diversity). Timestamps in responses stay in UTC; only the grouping into days
+and hours is local.
+
+You can change it later with ``PATCH /games/{gameId}`` (``{"timezone": ...}``).
+The new timezone applies to past awards too, because days are worked out when
+they are needed rather than stored, so a change can shift a user's current
+streak. Duplicating a game copies its timezone.
 
 The response includes the internal ``gameId`` (UUID) - address the game by
 this id thereafter.
