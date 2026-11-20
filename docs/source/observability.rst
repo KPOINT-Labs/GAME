@@ -121,37 +121,35 @@ Kubernetes in ``kubernetes/configmaps/*-prometheus-rules.yaml``):
 Each requires at least 0.05 requests/s on the route, so one slow request on an
 otherwise idle route does not page.
 
-``/activity`` baseline
-^^^^^^^^^^^^^^^^^^^^^^
+``/activity`` performance
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Measured on Postgres 16 with 1M awards in the game (50,000 users), one
-uvicorn worker, requests in sequence, from the server-side histogram:
+Measured on Postgres 16 with 1M awards in the game (50,000 users) and one
+uvicorn worker, from the server-side histogram. A *heavy* user has 10,000
+awards (25 a day) and a 400-day current streak; a *typical* user has 90.
 
 .. list-table::
    :header-rows: 1
-   :widths: 52 24 24
+   :widths: 40 30 30
 
    * - Scenario
-     - p50
-     - p95
-   * - Unknown user
-     - ~17 ms
-     - ~24 ms
-   * - Typical user (90 awards), 30 days
-     - ~18 ms
-     - ~24 ms
-   * - Heavy user (10,000 awards, 400-day streak), 30 days
-     - ~90 ms
-     - ~235 ms
-   * - Heavy user, 366 days
-     - ~135 ms
-     - ~245 ms
+     - Sequential p50 / p95
+     - 10 concurrent p50 / p95
+   * - Typical user, 30 days
+     - ~18 / 25 ms
+     - ~90 / 230 ms
+   * - Heavy user, 30 or 45 days
+     - ~38 / 49 ms
+     - ~175 / 242 ms
 
-The cost grows with the awards the user has in the period and with the
-length of their current streak; the database part is a few milliseconds, the
-rest is per-award work in the app. With ten concurrent requests on a single
-worker, heavy-user requests queue behind each other (p95 around 1 s), so run
-several workers in production.
+Days are grouped in SQL (``created_at AT TIME ZONE`` the game's timezone), so
+at most one row per day leaves the database, and the current-streak lookback
+reads non-overlapping chunks of days. Both reads are index-only range scans
+on ``ix_userpoints_user_created``, so a heavy user costs about the same as a
+typical one. Periods are capped at 45 days. Under concurrency most of the time
+is queueing on the single worker, so run several workers in production.
+Before these changes a heavy user's p95 was about 1 s at 10 concurrent
+requests (2.4 s for a 366-day period).
 
 Logging
 =======

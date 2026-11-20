@@ -828,7 +828,7 @@ responses_get_user_activity = {
     404: {"description": "Game not found for the provided id"},
     422: {
         "description": (
-            "Malformed dates, 'from' after 'to', or a period longer than 366 days"
+            "Malformed dates, 'from' after 'to', or a period longer than 45 days"
         ),
     },
     500: {"description": "Internal server error while retrieving activity"},
@@ -856,7 +856,7 @@ This is a day-by-day summary, not an event feed (recorded actions are at
   Defaults to 29 days before `to` (a 30-day period).
 - `to` (`date`, optional): Last day of the period. Defaults to today in the
   game's timezone.
-- The period can span at most 366 days.
+- The period can span at most 45 days (`to - from + 1 <= 45`).
 
 ### Authentication
 - Requires either `X-API-Key` or `Authorization: Bearer <access_token>`.
@@ -882,7 +882,7 @@ This is a day-by-day summary, not an event feed (recorded actions are at
 - `401`: missing or invalid auth credentials
 - `403`: API key rejected or no access to this game
 - `404`: game not found
-- `422`: malformed dates, `from` after `to`, or a period longer than 366 days
+- `422`: malformed dates, `from` after `to`, or a period longer than 45 days
 - `500`: retrieval failure
 
 <sub>**Id_endpoint:** `get_user_activity`</sub>

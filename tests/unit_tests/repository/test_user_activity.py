@@ -232,7 +232,11 @@ async def test_unknown_user_gets_an_empty_calendar(service, db_session):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "from_date,to_date",
-    [(D(2026, 11, 10), D(2026, 11, 9)), (D(2025, 11, 1), D(2026, 11, 2))],
+    [
+        (D(2026, 11, 10), D(2026, 11, 9)),  # from after to
+        (D(2026, 10, 3), D(2026, 11, 17)),  # 46 days
+        (D(2025, 11, 1), D(2026, 11, 2)),  # a year
+    ],
 )
 async def test_invalid_periods_are_rejected(service, db_session, from_date, to_date):
     s = await _setup(db_session)
@@ -246,14 +250,14 @@ async def test_invalid_periods_are_rejected(service, db_session, from_date, to_d
 
 
 @pytest.mark.asyncio
-async def test_a_full_366_day_period_is_allowed(service, db_session):
+async def test_a_full_45_day_period_is_allowed(service, db_session):
     s = await _setup(db_session)
 
     result = await service.get_user_activity(
-        s.game.id, "alice", from_date=D(2025, 11, 18), to_date=D(2026, 11, 18)
+        s.game.id, "alice", from_date=D(2026, 10, 5), to_date=D(2026, 11, 18)
     )
 
-    assert (result.to - result.from_).days + 1 == 366
+    assert (result.to - result.from_).days + 1 == 45
 
 
 @pytest.mark.asyncio
@@ -286,3 +290,79 @@ async def test_awards_on_all_of_the_games_tasks_count(service, db_session):
 
     assert [d.date for d in result.activeDays] == [D(2026, 11, 16), D(2026, 11, 17)]
     assert result.streaks.current == 2
+
+
+@pytest.mark.asyncio
+async def test_postgres_groups_days_in_sql(session_factory):
+    """On PostgreSQL the per-day grouping happens in SQL, in the game's
+    timezone, so at most one row per day leaves the database."""
+    from contextlib import asynccontextmanager
+    from unittest.mock import MagicMock
+
+    from sqlalchemy.dialects import postgresql
+
+    captured = []
+
+    class _Result(list):
+        pass
+
+    session = MagicMock()
+    session.get_bind.return_value = SimpleNamespace(
+        dialect=SimpleNamespace(name="postgresql")
+    )
+
+    async def _execute(stmt):
+        captured.append(stmt)
+        return _Result([(D(2026, 11, 2), 30, 3)])
+
+    session.execute = _execute
+
+    @asynccontextmanager
+    async def _factory():
+        yield session
+
+    repo = UserPointsRepository(session_factory=_factory)
+    rows = await repo.get_active_days_of_user_in_game(
+        "g", "u", "Asia/Kolkata", _utc(11, 1, 0), _utc(11, 30, 0)
+    )
+
+    sql = str(
+        captured[0].compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+    assert "timezone('Asia/Kolkata', userpoints.created_at)" in sql
+    assert "GROUP BY" in sql
+    assert rows == [(D(2026, 11, 2), 30, 3)]
+
+
+@pytest.mark.asyncio
+async def test_current_streak_lookback_chunks_do_not_overlap(service, db_session):
+    s = await _setup(db_session, timezone="UTC")
+    yesterday = D(2026, 11, 17)
+    for back in range(100):  # 100-day streak: needs the first two chunks
+        day = yesterday - datetime.timedelta(days=back)
+        await _award(
+            db_session,
+            s.alice,
+            s.task,
+            datetime.datetime.combine(day, datetime.time(6), UTC),
+        )
+    ranges = []
+    real = service.user_points_repository.get_active_days_of_user_in_game
+
+    async def _spy(game_id, user_id, tz_name, start, end):
+        ranges.append((start, end))
+        return await real(game_id, user_id, tz_name, start, end)
+
+    service.user_points_repository.get_active_days_of_user_in_game = _spy
+
+    result = await service.get_user_activity(
+        s.game.id, "alice", from_date=D(2026, 11, 18), to_date=D(2026, 11, 18)
+    )
+
+    assert result.streaks.current == 100
+    lookback = sorted(ranges[1:])  # first call is the period itself
+    assert len(lookback) == 2  # 64 days, then the 128 before them
+    for (_, earlier_end), (later_start, _) in zip(lookback, lookback[1:]):
+        assert earlier_end == later_start  # adjacent, never overlapping

@@ -64,8 +64,8 @@ groups:
             The 95th percentile of GET
             /games/{gameId}/users/{externalUserId}/activity has been above
             500 ms for 10 minutes (current value:
-            {{ $value | humanizeDuration }}). Its cost grows with the user's
-            awards in the requested period and with long current streaks.
+            {{ $value | humanizeDuration }}). Typical p95 is well under 250 ms;
+            check worker count and database load before the query itself.
             Dashboard: Grafana > GAME > API Overview > User activity.
 
       - alert: ApiRoute5xxRateHigh
