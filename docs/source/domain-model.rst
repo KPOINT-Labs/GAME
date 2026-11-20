@@ -392,7 +392,8 @@ Participation & scoring
        ``configData``.
    * - **UserActions**
      - An explicit event a user performed (``typeAction`` + structured
-       ``data``), recorded for audit and as scoring input.
+       ``data``), recorded for audit, analytics and exports. It is not a
+       scoring input and does not award points.
    * - **UserPoints**
      - The heart of the system: one row per award. Holds ``points``, the
        ``caseName`` (why the rule matched), an ``idempotencyKey`` (dedupes
