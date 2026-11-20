@@ -172,6 +172,9 @@ Points & actions (``/games/...``)
      - ``/games/{gameId}/users/{externalUserId}/points``
      - One user's total in a game.
    * - ``GET``
+     - ``/games/{gameId}/users/{externalUserId}/activity``
+     - A user's active days and streaks (``from``/``to``; game's timezone).
+   * - ``GET``
      - ``/games/{gameId}/users/{externalUserId}/points/simulated``
      - Simulated points (**OAuth2-only**, own subject).
    * - ``GET``

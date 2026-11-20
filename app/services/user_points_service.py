@@ -26,6 +26,7 @@ from app.repository.wallet_transaction_repository import WalletTransactionReposi
 from app.services.base_service import BaseService
 from app.services.strategy_service import StrategyService
 from app.services.user_points import (
+    PointsActivityMixin,
     PointsAssignmentMixin,
     PointsQueryMixin,
     PointsSimulationMixin,
@@ -39,6 +40,7 @@ class UserPointsService(
     PointsQueryMixin,
     PointsAssignmentMixin,
     PointsSimulationMixin,
+    PointsActivityMixin,
 ):
     def __init__(
         self,

@@ -287,6 +287,38 @@ class UserPointsRepository(BaseRepository):
         )
         return row
 
+    async def get_award_times_of_user_in_game(self, gameId, userId, start, end):
+        """
+        Return ``(created_at, points)`` for one user's awards in a game.
+
+        Only awards with ``start <= created_at < end`` are returned; callers
+        pass the UTC bounds of a range of the game's local days. Served by
+        ``ix_user_points_task_user_created_points`` (task, user, created_at,
+        INCLUDE points) without touching the table.
+
+        Args:
+            gameId: Internal game identifier.
+            userId: Internal user identifier.
+            start (datetime): Inclusive lower bound (timezone-aware).
+            end (datetime): Exclusive upper bound (timezone-aware).
+
+        Returns:
+            list: Rows of ``(created_at, points)``.
+        """
+        stmt = (
+            select(UserPoints.created_at, UserPoints.points)
+            .select_from(UserPoints)
+            .join(Tasks, Tasks.id == UserPoints.taskId)
+            .filter(
+                Tasks.gameId == gameId,
+                UserPoints.userId == userId,
+                UserPoints.created_at >= start,
+                UserPoints.created_at < end,
+            )
+        )
+        async with self.session_factory() as session:
+            return (await session.execute(stmt)).all()
+
     async def get_all_UserPoints_by_taskId(self, taskId):
         """
         Aggregate points per user for a single task.

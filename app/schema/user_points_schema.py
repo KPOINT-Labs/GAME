@@ -1,6 +1,7 @@
-from typing import List, Optional
+import datetime
+from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schema.base_schema import ModelBaseInfo
 from app.schema.wallet_schema import WalletWithoutUserId
@@ -313,6 +314,103 @@ class TaskLeaderboard(GameLeaderboard):
         description="External identifier of the task.",
         examples=["task-login"],
     )
+
+
+class ActivityDay(BaseModel):
+    """
+    One active day: a local day in the game's timezone with at least one award.
+
+    Attributes:
+        date (date): The day, in the game's timezone.
+        points (int): Points awarded that day.
+        awards (int): Number of awards that day.
+    """
+
+    date: datetime.date = Field(..., examples=["2026-11-02"])
+    points: int = Field(..., description="Points awarded that day.", examples=[30])
+    awards: int = Field(..., description="Number of awards that day.", examples=[3])
+
+
+class StreakRun(BaseModel):
+    """
+    A run of consecutive active days within the requested period.
+
+    Attributes:
+        start (date): First day of the run.
+        end (date): Last day of the run.
+        length (int): Number of days in the run.
+    """
+
+    start: datetime.date = Field(..., examples=["2026-11-02"])
+    end: datetime.date = Field(..., examples=["2026-11-10"])
+    length: int = Field(..., examples=[9])
+
+
+class ActivityStreaks(BaseModel):
+    """
+    Streak summary for a user in a game.
+
+    Attributes:
+        current (int): Current streak as of today, over all history.
+        longest (int): Longest run within the requested period.
+        runs (List[StreakRun]): Runs within the requested period, oldest first.
+    """
+
+    current: int = Field(
+        ...,
+        description=(
+            "Consecutive active days ending today, or yesterday if there is "
+            "no award yet today (the same rule GREENCROWD scores with). "
+            "Counted over all history, so it can be longer than the period."
+        ),
+        examples=[4],
+    )
+    longest: int = Field(
+        ..., description="Longest run within the period.", examples=[9]
+    )
+    runs: List[StreakRun] = Field(
+        ...,
+        description=(
+            "Runs of consecutive active days within the period, oldest first. "
+            "A run that continues past either edge is cut at the edge."
+        ),
+    )
+
+
+class UserActivity(BaseModel):
+    """
+    A user's activity calendar in a game over a period of local days.
+
+    Attributes:
+        externalGameId (str): The game.
+        externalUserId (str): The user.
+        timezone (str): The game's timezone that days are counted in.
+        basis (str): What makes a day active (``awards``).
+        from_ (date): First day of the period (``from`` in JSON).
+        to (date): Last day of the period.
+        activeDays (List[ActivityDay]): Active days in the period, oldest first.
+        streaks (ActivityStreaks): Streak summary.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    externalGameId: str = Field(..., examples=["game-readme-001"])
+    externalUserId: str = Field(..., examples=["user_123"])
+    timezone: str = Field(
+        ...,
+        description="The game's timezone; days are its local days.",
+        examples=["Asia/Kolkata"],
+    )
+    basis: Literal["awards"] = Field(
+        default="awards",
+        description="A day is active when the user received at least one award.",
+    )
+    from_: datetime.date = Field(..., alias="from", examples=["2026-11-01"])
+    to: datetime.date = Field(..., examples=["2026-11-30"])
+    activeDays: List[ActivityDay] = Field(
+        ..., description="Active days in the period, oldest first."
+    )
+    streaks: ActivityStreaks
 
 
 class AllPointsByGameWithDetails(BaseModel):

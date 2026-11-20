@@ -20,6 +20,7 @@ from app.engine.strategy_registry import register_strategy
 from app.schema.task_schema import SimulatedTaskPoints
 from app.util.add_log import add_log
 from app.util.calculate_hash_simulated_strategy import calculate_hash_simulated_strategy
+from app.util.streaks import count_consecutive_active_days  # noqa: F401 (re-export)
 from app.util.timezones import local_datetime, zone_of
 
 logger = logging.getLogger(__name__)
@@ -34,36 +35,6 @@ def _local_date(timestamp, zone=None):
     ``None``). Naive values are taken as UTC, as they are stored.
     """
     return local_datetime(timestamp, zone or zone_of(None)).date()
-
-
-def count_consecutive_active_days(active_dates, today):
-    """
-    Length of the user's current streak of consecutive active days.
-
-    Days are the game's local days: callers pass ``active_dates`` and
-    ``today`` already converted to the game's timezone.
-
-    Counts back one day at a time from ``today`` while each day has activity.
-    If ``today`` has no activity yet, counting starts from yesterday (grace
-    day), because today's award is usually not recorded when dimensions are
-    calculated. A streak whose last active day is two or more days ago is 0.
-
-    Args:
-        active_dates (Iterable[datetime.date]): Days with activity, in any
-            order and possibly repeated. Dates after ``today`` are ignored.
-        today (datetime.date): The reference day.
-
-    Returns:
-        int: Number of consecutive active days ending today (or yesterday).
-    """
-    days = {d for d in active_dates if d <= today}
-    one_day = datetime.timedelta(days=1)
-    day = today if today in days else today - one_day
-    streak = 0
-    while day in days:
-        streak += 1
-        day -= one_day
-    return streak
 
 
 STREAK_BONUS_CAP_PARAM = "variable_streak_bonus_cap"
