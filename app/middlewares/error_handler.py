@@ -23,7 +23,16 @@ responses with CORS headers. Only genuine, unhandled errors are caught.
 import logging
 
 import sentry_sdk
+from fastapi.exception_handlers import (
+    http_exception_handler as default_http_exception_handler,
+)
 from fastapi.responses import JSONResponse
+
+from app.core.db_errors import (
+    RETRY_AFTER_SECONDS,
+    UNAVAILABLE_DETAIL,
+    is_database_unavailable,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +68,19 @@ class CatchUnhandledErrorsMiddleware:
             # Preserve observability: the traceback still reaches the logs and
             # Sentry even though we no longer let the exception bubble up to
             # ServerErrorMiddleware.
-            logger.exception("Unhandled exception while handling request")
+            unavailable = is_database_unavailable(exc)
+            if unavailable:
+                # One line per request: a full traceback for every request
+                # during an outage would flood the logs.
+                logger.warning(
+                    "Database unavailable while handling %s %s: %s: %s",
+                    scope.get("method"),
+                    scope.get("path"),
+                    type(exc).__name__,
+                    exc,
+                )
+            else:
+                logger.exception("Unhandled exception while handling request")
             sentry_sdk.capture_exception(exc)
 
             if response_started:
@@ -67,8 +88,33 @@ class CatchUnhandledErrorsMiddleware:
                 # response; re-raise so the server tears the connection down.
                 raise
 
-            response = JSONResponse(
-                status_code=500,
-                content={"detail": "Internal server error"},
-            )
+            if unavailable:
+                # Temporary: tell clients to retry rather than give up.
+                response = JSONResponse(
+                    status_code=503,
+                    content={"detail": UNAVAILABLE_DETAIL},
+                    headers={"Retry-After": str(RETRY_AFTER_SECONDS)},
+                )
+            else:
+                response = JSONResponse(
+                    status_code=500,
+                    content={"detail": "Internal server error"},
+                )
             await response(scope, receive, send)
+
+
+async def http_exception_handler(request, exc):
+    """
+    FastAPI handler for ``HTTPException``: a 5xx raised because the database
+    was unreachable (for example a service wrapping the driver error in an
+    ``InternalServerError``) becomes ``503`` with ``Retry-After``; everything
+    else keeps FastAPI's default handling.
+    """
+    if getattr(exc, "status_code", 0) >= 500 and is_database_unavailable(exc):
+        logger.warning("Database unavailable behind HTTP %s", exc.status_code)
+        return JSONResponse(
+            status_code=503,
+            content={"detail": UNAVAILABLE_DETAIL},
+            headers={"Retry-After": str(RETRY_AFTER_SECONDS)},
+        )
+    return await default_http_exception_handler(request, exc)

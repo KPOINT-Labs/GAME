@@ -2,6 +2,7 @@
 services:
   api:
     container_name: "GAME_API_DEV"
+    restart: unless-stopped
     build:
       context: .
       target: dev

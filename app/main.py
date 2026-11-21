@@ -10,12 +10,16 @@ from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import RedirectResponse
 from prometheus_fastapi_instrumentator import Instrumentator, metrics
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.cors import CORSMiddleware
 
 from app.api.v1.routes import routers as v1_routers
 from app.core.config import configs
 from app.core.container import Container
-from app.middlewares.error_handler import CatchUnhandledErrorsMiddleware
+from app.middlewares.error_handler import (
+    CatchUnhandledErrorsMiddleware,
+    http_exception_handler,
+)
 from app.util.class_object import singleton
 
 # Buckets (seconds) for the per-route ``http_request_duration_seconds``
@@ -261,6 +265,8 @@ class AppCreator:
         # stack and still receive CORS headers (otherwise the browser blocks
         # them and the dashboard shows a bare "Network Error").
         self.app.add_middleware(CatchUnhandledErrorsMiddleware)
+        # 5xx HTTPExceptions caused by a database outage become 503.
+        self.app.add_exception_handler(StarletteHTTPException, http_exception_handler)
         if configs.BACKEND_CORS_ORIGINS:
             self.app.add_middleware(
                 CORSMiddleware,

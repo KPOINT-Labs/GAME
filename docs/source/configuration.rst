@@ -106,8 +106,12 @@ Connection pool
      - ``false``
      - Log every SQL statement. Dev only.
    * - ``DB_POOL_PRE_PING``
-     - ``true``
-     - Health-check a connection before use (avoids stale-connection errors).
+     - ``false``
+     - Health-check a connection before use. Off by default: on a frozen
+       database the check itself can hang past the timeouts below. Instead,
+       an outage error discards the pool, so the next request reconnects
+       (an idle API sees at most one retryable ``503`` after a database
+       restart).
    * - ``DB_POOL_SIZE``
      - ``20``
      - Persistent pooled connections.
@@ -120,6 +124,25 @@ Connection pool
    * - ``DB_POOL_RECYCLE_SECONDS``
      - ``1800``
      - Recycle connections older than this (dodges server-side idle timeouts).
+   * - ``DB_CONNECT_TIMEOUT_SECONDS``
+     - ``5``
+     - Seconds to open a database connection before failing (``503``).
+       ``0`` disables.
+   * - ``DB_COMMAND_TIMEOUT_SECONDS``
+     - ``30``
+     - Seconds a single query may run before failing (``503``), so a frozen
+       or unreachable database does not hang requests. Keep it above your
+       slowest query; ``0`` disables.
+   * - ``DB_READY_TIMEOUT_SECONDS``
+     - ``2``
+     - Upper bound for the readiness probe's ``SELECT 1``
+       (``/api/v1/kpi/ready``).
+   * - ``DB_UNAVAILABLE_COOLDOWN_SECONDS``
+     - ``2``
+     - After a connection failure, answer ``503`` immediately for this many
+       seconds instead of waiting on the database again, so a request that
+       makes several queries does not wait out each timeout in turn.
+       ``0`` disables.
    * - ``LEADERBOARD_WORK_MEM``
      - ``32MB``
      - Postgres ``work_mem`` for leaderboard queries only (set per transaction).

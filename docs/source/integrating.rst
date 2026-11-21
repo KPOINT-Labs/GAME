@@ -178,6 +178,15 @@ duplicate is still rejected at the database, so no double-award occurs; the
 losing request receives ``409 Conflict`` instead of the original success body
 (see :ref:`known-limitations`).
 
+Database outages and retries
+----------------------------
+
+When the database is unavailable the API answers ``503`` with a
+``Retry-After`` header (seconds). Retry after that delay, with backoff, and
+**reuse the same** ``Idempotency-Key`` for awards: if the first attempt was
+committed before the connection dropped, the retry is recognised rather than
+awarding twice. Do not retry a ``503`` without an idempotency key.
+
 Rate limits
 -----------
 

@@ -56,33 +56,46 @@ class CohortRepository(BaseRepository):
             return list((await s.execute(stmt)).scalars().all())
 
     async def replace_user_game_cohorts(
-        self, user_id, game_id, cohorts: Iterable[str], *, api_key: str = None
+        self,
+        user_id,
+        game_id,
+        cohorts: Iterable[str],
+        *,
+        api_key: str = None,
+        session: Optional[AsyncSession] = None,
     ) -> None:
         """
         Replace the user's cohorts in a game with ``cohorts``, atomically.
 
-        An empty ``cohorts`` clears the user's cohorts in the game.
+        An empty ``cohorts`` clears the user's cohorts in the game. With a
+        caller ``session`` the change only flushes, so it commits (or rolls
+        back) together with the caller's other writes; otherwise it commits
+        on its own.
 
         Args:
             user_id: Internal user identifier.
             game_id: Internal game identifier.
             cohorts (Iterable[str]): The new, already validated cohort tags.
             api_key (str): Caller's API key, recorded on the new rows.
+            session (Optional[AsyncSession]): Caller's open transaction.
         """
-        async with self.session_factory() as session:
-            await session.execute(
+        async with self._session(session) as s:
+            await s.execute(
                 sa_delete(UserGameCohort).where(
                     UserGameCohort.userId == user_id,
                     UserGameCohort.gameId == game_id,
                 )
             )
-            session.add_all(
+            s.add_all(
                 UserGameCohort(
                     userId=user_id, gameId=game_id, cohort=c, apiKey_used=api_key
                 )
                 for c in cohorts
             )
-            await session.commit()
+            if session is None:
+                await s.commit()
+            else:
+                await s.flush()
 
     async def add_points_cohorts(
         self,

@@ -166,6 +166,9 @@ class Container(containers.DeclarativeContainer):
         max_overflow=configs.DB_MAX_OVERFLOW,
         pool_timeout_seconds=configs.DB_POOL_TIMEOUT_SECONDS,
         pool_recycle_seconds=configs.DB_POOL_RECYCLE_SECONDS,
+        connect_timeout_seconds=configs.DB_CONNECT_TIMEOUT_SECONDS,
+        command_timeout_seconds=configs.DB_COMMAND_TIMEOUT_SECONDS,
+        unavailable_cooldown_seconds=configs.DB_UNAVAILABLE_COOLDOWN_SECONDS,
     )
 
     # Repository (Add in here)

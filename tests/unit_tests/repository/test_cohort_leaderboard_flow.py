@@ -33,7 +33,11 @@ from app.services.user_points_service import UserPointsService
 
 
 class _FakeActionsRepository:
-    async def create(self, action):
+    def __init__(self, session_factory):
+        # The action + cohort change share one transaction on this factory.
+        self.session_factory = session_factory
+
+    async def create(self, action, session=None, auto_commit=True):
         stored = {
             **action.model_dump(),
             "id": str(uuid4()),
@@ -60,7 +64,7 @@ def actions_service(repos, session_factory):
         # Storing the action row itself is not under test, and its insert
         # passes the user id as a string, which only Postgres accepts.
         # Everything cohort-related below uses the real database.
-        user_actions_repository=_FakeActionsRepository(),
+        user_actions_repository=_FakeActionsRepository(session_factory),
         users_repository=repos["users"],
         game_repository=repos["games"],
         task_repository=repos["tasks"],

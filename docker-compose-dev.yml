@@ -14,8 +14,10 @@ services:
       - LOG_LEVEL=debug
     networks:
       - backend
+    restart: unless-stopped
     depends_on:
-      - postgrespostgres
+      postgrespostgres:
+        condition: service_healthy
     volumes:
       - ./app:/app/app
       - ./migrations:/app/migrations
@@ -47,6 +49,14 @@ services:
           - localhost
     volumes:
       - postgrespostgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    # Ready only when Postgres accepts connections; the api waits for this.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
     logging:
       driver: "json-file"
       options:

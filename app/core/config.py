@@ -345,11 +345,28 @@ class Configs(BaseSettings):
     RATE_LIMIT_TTL_BUFFER_SECONDS: int = _env_to_int("RATE_LIMIT_TTL_BUFFER_SECONDS", 5)
 
     SQLALCHEMY_ECHO: bool = _env_to_bool("SQLALCHEMY_ECHO", False)
-    DB_POOL_PRE_PING: bool = _env_to_bool("DB_POOL_PRE_PING", True)
+    # Off by default: on a hung/partitioned server the pre-ping itself blocks
+    # until the server answers (asyncpg waits for its timeout cancellation,
+    # and the pool's reset then waits on that). Dead connections are instead
+    # dropped, with the whole pool, on the first outage error (503, retry).
+    DB_POOL_PRE_PING: bool = _env_to_bool("DB_POOL_PRE_PING", False)
     DB_POOL_SIZE: int = _env_to_int("DB_POOL_SIZE", 20)
     DB_MAX_OVERFLOW: int = _env_to_int("DB_MAX_OVERFLOW", 40)
     DB_POOL_TIMEOUT_SECONDS: int = _env_to_int("DB_POOL_TIMEOUT_SECONDS", 30)
     DB_POOL_RECYCLE_SECONDS: int = _env_to_int("DB_POOL_RECYCLE_SECONDS", 1800)
+    # Fail fast when Postgres is down or unreachable (0 disables): seconds to
+    # open a connection, and to run one query. Requests then get 503 instead
+    # of hanging. Size DB_COMMAND_TIMEOUT_SECONDS above your slowest query.
+    DB_CONNECT_TIMEOUT_SECONDS: int = _env_to_int("DB_CONNECT_TIMEOUT_SECONDS", 5)
+    DB_COMMAND_TIMEOUT_SECONDS: int = _env_to_int("DB_COMMAND_TIMEOUT_SECONDS", 30)
+    # Upper bound for the readiness probe's SELECT 1 (/api/v1/kpi/ready).
+    DB_READY_TIMEOUT_SECONDS: int = _env_to_int("DB_READY_TIMEOUT_SECONDS", 2)
+    # After a connection failure, skip the database for this many seconds so
+    # the rest of the request and concurrent requests fail fast (503) rather
+    # than each waiting out a timeout. 0 disables.
+    DB_UNAVAILABLE_COOLDOWN_SECONDS: int = _env_to_int(
+        "DB_UNAVAILABLE_COOLDOWN_SECONDS", 2
+    )
     # work_mem for leaderboard queries only (SET LOCAL, Postgres). The
     # per-user aggregate and RANK() sort spill to disk at the 4MB default once
     # a game has tens of thousands of ranked users. Each running leaderboard

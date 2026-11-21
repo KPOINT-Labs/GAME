@@ -95,8 +95,28 @@ spec:
                 configMapKeyRef:
                   key: VERSION_APP
                   name: env-prod
-          image: postgres
+          # Pinned: an unpinned tag can pull a new major version on restart,
+          # which cannot open the existing data directory. Keep in step with
+          # docker-compose.yml; upgrade majors deliberately (pg_upgrade or
+          # dump/restore), never by changing this tag alone.
+          image: postgres:16-alpine
           name: postgres
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Generous: crash recovery after an unclean stop can take a while,
+          # and killing Postgres mid-recovery only makes it slower.
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
           volumeMounts:
             - mountPath: /var/lib/postgresql/data
               name: postgres-data

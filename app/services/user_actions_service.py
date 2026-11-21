@@ -123,12 +123,20 @@ class UserActionsService(BaseService):
             apiKey_used=api_key,
         )
 
-        created_action = await self.user_actions_repository.create(new_action)
         cohorts = getattr(action, "cohorts", None)
         if cohorts is not None and self.cohort_repository is not None:
-            await self.cohort_repository.replace_user_game_cohorts(
-                user.id, task.gameId, cohorts, api_key=api_key
-            )
+            # One transaction: the action and the cohort change are stored
+            # together or not at all (e.g. if the database drops mid-request).
+            async with self.user_actions_repository.session_factory() as session:
+                created_action = await self.user_actions_repository.create(
+                    new_action, session=session, auto_commit=False
+                )
+                await self.cohort_repository.replace_user_game_cohorts(
+                    user.id, task.gameId, cohorts, api_key=api_key, session=session
+                )
+                await session.commit()
+        else:
+            created_action = await self.user_actions_repository.create(new_action)
         response = ResponseAddActionDidByUserInTask(
             **created_action.model_dump(),
             externalUserId=str(action.externalUserId),

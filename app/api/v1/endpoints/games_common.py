@@ -5,6 +5,11 @@ import jwt
 from fastapi import HTTPException, Request, status
 from sqlalchemy.exc import DataError, IntegrityError, ProgrammingError
 
+from app.core.db_errors import (
+    RETRY_AFTER_SECONDS,
+    UNAVAILABLE_DETAIL,
+    is_database_unavailable,
+)
 from app.core.exceptions import (
     ConflictError,
     DuplicatedError,
@@ -160,6 +165,14 @@ def _map_write_exception(
         return HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=exc.detail,
+        )
+    if isinstance(exc, HTTPException) and exc.status_code < 500:
+        return exc
+    if is_database_unavailable(exc):
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=UNAVAILABLE_DETAIL,
+            headers={"Retry-After": str(RETRY_AFTER_SECONDS)},
         )
     if isinstance(exc, HTTPException):
         return exc
