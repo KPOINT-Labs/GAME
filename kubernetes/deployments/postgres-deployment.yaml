@@ -95,11 +95,14 @@ spec:
                 configMapKeyRef:
                   key: VERSION_APP
                   name: env-prod
-          # Pinned: an unpinned tag can pull a new major version on restart,
-          # which cannot open the existing data directory. Keep in step with
-          # docker-compose.yml; upgrade majors deliberately (pg_upgrade or
-          # dump/restore), never by changing this tag alone.
-          image: postgres:16-alpine
+          # Pinned to the major version the existing volume was initialised
+          # with (production runs PostgreSQL 18): an unpinned tag can pull a
+          # new major version on restart, which cannot open the existing data
+          # directory. Upgrade majors deliberately (pg_upgrade or
+          # dump/restore), never by changing this tag alone. PGDATA (above)
+          # keeps the data inside the mounted volume, which the 18+ images
+          # require.
+          image: postgres:18-alpine
           name: postgres
           readinessProbe:
             exec:

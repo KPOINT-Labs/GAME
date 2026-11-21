@@ -108,13 +108,15 @@ Manifests live under ``kubernetes/`` and a helper script
 walkthrough. Operational notes:
 
 * **Probes** are defined in the manifests: liveness on
-  ``GET /api/v1/kpi/health_check`` (never touches the database) and readiness
-  on ``GET /api/v1/kpi/ready`` (requires the database). Postgres has
-  ``pg_isready`` probes. The readiness endpoint only exists in images built
-  after it was added, so bump the API image tag together with the probe.
-* The Postgres image is **pinned** (``postgres:16-alpine``). Upgrade major
-  versions deliberately (``pg_upgrade`` or dump/restore); an unpinned tag can
-  pull a new major on restart that cannot open the existing data directory.
+  ``GET /api/v1/kpi/health_check`` (never touches the database). Readiness
+  uses the same endpoint until the API image tag is bumped to a build that
+  includes ``GET /api/v1/kpi/ready`` (requires the database); then switch the
+  readiness probe to it. Postgres has ``pg_isready`` probes.
+* The Postgres image is **pinned** to the major version of the existing data
+  (``postgres:18-alpine``; Docker Compose uses 16 for fresh volumes). Upgrade
+  major versions deliberately (``pg_upgrade`` or dump/restore); an unpinned
+  tag can pull a new major on restart that cannot open the existing data
+  directory.
 * Provide configuration via ``ConfigMap`` (non-secret) and ``Secret``
   (``SECRET_KEY``, DB password, ``KEYCLOAK_CLIENT_SECRET``).
 * Roll back with ``kubectl rollout undo deployment/<name>`` - Kubernetes keeps
