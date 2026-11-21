@@ -220,7 +220,7 @@ class TestActionSetsCohorts(unittest.IsolatedAsyncioTestCase):
             id="user-1"
         )
 
-        async def _create(action):
+        async def _create(action, session=None, auto_commit=True):
             stored = {
                 **action.model_dump(),
                 "id": str(uuid4()),
@@ -231,6 +231,13 @@ class TestActionSetsCohorts(unittest.IsolatedAsyncioTestCase):
 
         actions_repository = AsyncMock()
         actions_repository.create = AsyncMock(side_effect=_create)
+        self.session = MagicMock()
+        self.session.commit = AsyncMock()
+        session_context = MagicMock()
+        session_context.__aenter__ = AsyncMock(return_value=self.session)
+        session_context.__aexit__ = AsyncMock(return_value=False)
+        actions_repository.session_factory = MagicMock(return_value=session_context)
+        self.service_actions = actions_repository
         return UserActionsService(
             user_actions_repository=actions_repository,
             users_repository=users_repository,
@@ -259,8 +266,19 @@ class TestActionSetsCohorts(unittest.IsolatedAsyncioTestCase):
         await self._act(self._service(repo), ["school-a", "grade-7"])
 
         repo.replace_user_game_cohorts.assert_awaited_once_with(
-            "user-1", "game-1", ["school-a", "grade-7"], api_key="key-1"
+            "user-1",
+            "game-1",
+            ["school-a", "grade-7"],
+            api_key="key-1",
+            session=self.session,
         )
+        # The action is written in the same transaction, committed once.
+        create_kwargs = self.service_actions.create.await_args.kwargs
+        self.assertEqual(
+            (create_kwargs["session"], create_kwargs["auto_commit"]),
+            (self.session, False),
+        )
+        self.session.commit.assert_awaited_once()
 
     async def test_empty_list_clears(self):
         repo = AsyncMock()
@@ -268,7 +286,7 @@ class TestActionSetsCohorts(unittest.IsolatedAsyncioTestCase):
         await self._act(self._service(repo), [])
 
         repo.replace_user_game_cohorts.assert_awaited_once_with(
-            "user-1", "game-1", [], api_key="key-1"
+            "user-1", "game-1", [], api_key="key-1", session=self.session
         )
 
     async def test_omitted_cohorts_leave_them_unchanged(self):
@@ -277,6 +295,17 @@ class TestActionSetsCohorts(unittest.IsolatedAsyncioTestCase):
         await self._act(self._service(repo), None)
 
         repo.replace_user_game_cohorts.assert_not_awaited()
+
+    async def test_action_is_not_committed_when_cohort_update_fails(self):
+        repo = AsyncMock()
+        repo.replace_user_game_cohorts.side_effect = RuntimeError("db dropped")
+
+        with self.assertRaises(RuntimeError):
+            await self._act(self._service(repo), ["school-a"])
+
+        # Nothing is committed: the session is rolled back on exit, so the
+        # action is not stored without its cohort change.
+        self.session.commit.assert_not_awaited()
 
     async def test_no_cohort_repository_still_records_action(self):
         result = await self._act(self._service(None), ["school-a"])

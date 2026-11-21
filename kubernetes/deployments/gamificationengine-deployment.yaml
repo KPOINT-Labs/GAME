@@ -78,4 +78,30 @@ spec:
                   name: env-prod
           image: fvergaracl/game:v1.1.005
           name: game-api
+          ports:
+            - containerPort: 8000
+          # Liveness never touches the database, so a database outage does
+          # not restart API pods in a loop.
+          livenessProbe:
+            httpGet:
+              path: /api/v1/kpi/health_check
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # TODO: switch readiness to /api/v1/kpi/ready (checks the database,
+          # so pods that cannot reach it stop receiving traffic) when the
+          # image tag above is bumped to a build that includes it (PR #16
+          # onwards). The current image has no /ready, so it would 404 and no
+          # pod would become ready; until then readiness uses the liveness
+          # endpoint.
+          readinessProbe:
+            httpGet:
+              path: /api/v1/kpi/health_check
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
       restartPolicy: Always

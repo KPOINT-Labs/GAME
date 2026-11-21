@@ -104,7 +104,7 @@ A minimal ``.env`` for local development:
 
    # DB pool tuning (recommended under concurrent load)
    SQLALCHEMY_ECHO=false
-   DB_POOL_PRE_PING=true
+   DB_POOL_PRE_PING=false
    DB_POOL_SIZE=20
    DB_MAX_OVERFLOW=40
 

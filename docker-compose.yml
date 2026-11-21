@@ -12,8 +12,11 @@ services:
       - ENV=prod
     networks:
       - backend
+    # Restart after a crash; start only once Postgres is ready.
+    restart: unless-stopped
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     volumes:
       - game-logs:/app/logs
     logging:
@@ -42,6 +45,14 @@ services:
       - backend
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    # Ready only when Postgres accepts connections; the api waits for this.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
 
   healthcheck_service:
     image: fvergaracl/game-health-check:latest

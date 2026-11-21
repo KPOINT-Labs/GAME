@@ -107,8 +107,16 @@ Manifests live under ``kubernetes/`` and a helper script
 ``deploy-kubernetes.sh`` is provided. See ``KUBERNETES_SETUP.md`` for the full
 walkthrough. Operational notes:
 
-* Define **liveness/readiness probes** - ``GET /api/v1/kpi/health_check`` is a
-  natural readiness target.
+* **Probes** are defined in the manifests: liveness on
+  ``GET /api/v1/kpi/health_check`` (never touches the database). Readiness
+  uses the same endpoint until the API image tag is bumped to a build that
+  includes ``GET /api/v1/kpi/ready`` (requires the database); then switch the
+  readiness probe to it. Postgres has ``pg_isready`` probes.
+* The Postgres image is **pinned** to the major version of the existing data
+  (``postgres:18-alpine``; Docker Compose uses 16 for fresh volumes). Upgrade
+  major versions deliberately (``pg_upgrade`` or dump/restore); an unpinned
+  tag can pull a new major on restart that cannot open the existing data
+  directory.
 * Provide configuration via ``ConfigMap`` (non-secret) and ``Secret``
   (``SECRET_KEY``, DB password, ``KEYCLOAK_CLIENT_SECRET``).
 * Roll back with ``kubectl rollout undo deployment/<name>`` - Kubernetes keeps
@@ -134,11 +142,54 @@ golden rule: **migrate before the new code serves traffic**, in CI/CD.
 Health, readiness & graceful shutdown
 =====================================
 
-* **Health** - ``GET /api/v1/kpi/health_check``.
+* **Liveness** - ``GET /api/v1/kpi/health_check``: the process is up. It does
+  not touch the database, so a database outage never restarts API pods.
+* **Readiness** - ``GET /api/v1/kpi/ready``: ``200`` when the database answers
+  ``SELECT 1`` within ``DB_READY_TIMEOUT_SECONDS`` (default 2 s), else ``503``.
+  Route traffic only to ready instances.
 * **Graceful shutdown** - the FastAPI lifespan hook flushes the DSL
   execution-log queue on shutdown (``observer.aclose()``) so buffered audit
   rows aren't lost. Give the container a few seconds of termination grace so
   the flush completes.
+
+Database outages
+================
+
+What happens when PostgreSQL is stopped, crashes or becomes unreachable:
+
+* **Requests fail fast with** ``503`` and a ``Retry-After`` header (connection
+  refused, connection lost, pool exhausted, or a connect/query timeout).
+  ``DB_CONNECT_TIMEOUT_SECONDS`` (default 5) and ``DB_COMMAND_TIMEOUT_SECONDS``
+  (default 30) bound how long a request waits on an unreachable or frozen
+  database, so requests do not pile up; a query already running when the
+  database freezes fails after the command timeout. After a failure, requests
+  answer ``503`` immediately for ``DB_UNAVAILABLE_COOLDOWN_SECONDS``
+  (default 2). Other errors still return ``500``.
+* **Readiness** turns ``503`` within a few seconds, so load balancers and
+  Kubernetes stop sending traffic; liveness stays ``200``.
+* **Recovery is automatic**: an outage error discards the broken connection and
+  the whole pool, so the next request opens fresh connections. In tests the
+  API served awards again 2-4 seconds after Postgres came back (stop, kill or
+  freeze), without a restart. If Postgres restarts while the API is idle, the
+  first request may get one retryable ``503``.
+* **Restarts**: in Docker Compose, ``api`` and ``postgres`` restart unless
+  stopped, and ``api`` starts only once Postgres passes its ``pg_isready``
+  healthcheck. In Kubernetes both use ``restartPolicy: Always``.
+* **No acknowledged write is lost**: each award writes the points row, the
+  wallet balance and the wallet transaction in one database transaction, and
+  Postgres flushes its write-ahead log before acknowledging a commit (the
+  defaults ``fsync`` and ``synchronous_commit`` are on; keep them on). An
+  action and its cohort change are also one transaction.
+* **Clients must retry** ``503`` responses (and timeouts) with the **same**
+  ``Idempotency-Key``: if a commit succeeded but the response was lost, the
+  retry is recognised instead of awarding twice. See :doc:`integrating`.
+* **By design**, audit-log rows and DSL execution traces may be dropped while
+  the database is unavailable (they never block scoring), and rate limiting
+  is unavailable with the database when ``ABUSE_PREVENTION_BACKEND`` is
+  ``database``.
+* **Backups are not covered here.** A single database with no backups loses
+  everything if its disk is lost; set up scheduled backups (``pg_dump`` or
+  WAL archiving) and test restores.
 
 Scaling guidance
 ================
