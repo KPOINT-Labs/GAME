@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from sqlalchemy.sql.expression import and_
 
 SQLALCHEMY_QUERY_MAPPER = {
@@ -21,6 +23,10 @@ def dict_to_sqlalchemy_filter_options(model_class, search_option_dict):
     Returns:
         sqlalchemy.sql.expression.BinaryExpression: Combined SQLAlchemy filter
           options.
+
+    UUID values match exactly. A value of an unsupported type raises
+    ``TypeError`` rather than being skipped, since skipping a filter would
+    silently widen the query.
     """
     sql_alchemy_filter_options = []
     copied_dict = search_option_dict.copy()
@@ -35,6 +41,14 @@ def dict_to_sqlalchemy_filter_options(model_class, search_option_dict):
             sql_alchemy_filter_options.append(attr.like("%" + option_from_dict + "%"))
         elif type(option_from_dict) in [bool]:
             sql_alchemy_filter_options.append(attr.is_(option_from_dict))
+        elif isinstance(option_from_dict, UUID):
+            # Ids match exactly (a substring match makes no sense for them).
+            sql_alchemy_filter_options.append(attr == option_from_dict)
+        else:
+            raise TypeError(
+                f"Unsupported filter value for {key!r}: "
+                f"{type(option_from_dict).__name__}"
+            )
 
     for custom_option in copied_dict:
         if "__" not in custom_option:

@@ -1,6 +1,8 @@
 import unittest
+from datetime import datetime
+from uuid import uuid4
 
-from sqlalchemy import Boolean, Column, Integer, String, create_engine
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Uuid, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.expression import and_
@@ -20,6 +22,8 @@ class TestModel(Base):
     name = Column(String)
     age = Column(Integer)
     is_active = Column(Boolean)
+    owner_id = Column(Uuid)
+    created_at = Column(DateTime)
 
 
 # Create an in-memory SQLite database
@@ -147,3 +151,29 @@ class TestQueryBuilder(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestQueryBuilderIds(unittest.TestCase):
+    def test_uuid_value_is_an_exact_match(self):
+        """UUID values filter by exact match."""
+        owner = uuid4()
+        filter_options = dict_to_sqlalchemy_filter_options(
+            TestModel, {"owner_id": owner}
+        )
+        self.assertEqual(
+            str(filter_options), str(and_(True, TestModel.owner_id == owner))
+        )
+        self.assertIn("owner_id =", str(filter_options))
+
+    def test_unsupported_value_type_raises_instead_of_being_ignored(self):
+        with self.assertRaises(TypeError) as ctx:
+            dict_to_sqlalchemy_filter_options(
+                TestModel, {"created_at": datetime(2026, 1, 1)}
+            )
+        self.assertIn("created_at", str(ctx.exception))
+
+    def test_keys_that_are_not_columns_are_still_ignored(self):
+        filter_options = dict_to_sqlalchemy_filter_options(
+            TestModel, {"page": 1, "page_size": "all", "ordering": "-id"}
+        )
+        self.assertEqual(str(filter_options), str(and_(True)))
