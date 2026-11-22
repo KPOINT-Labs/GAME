@@ -22,6 +22,7 @@ export const GLOSSARY_TERMS = [
   { id: 'caseName', related: ['callbackData', 'rule'], blockSlug: 'set-case-name' },
   { id: 'callbackData', related: ['caseName', 'dataField'], blockSlug: 'set-callback-data' },
   { id: 'dataField', related: ['callbackData'], blockSlug: 'field-data' },
+  { id: 'pointsBreakdown', related: ['caseName', 'callbackData'], blockSlug: 'add-bonus' },
   // Extension model
   { id: 'parentStrategy', related: ['dslExtend', 'parentOverride'] },
   {
@@ -60,6 +61,7 @@ export const BLOCK_TO_TERM = {
   gd_assign_points: 'caseName',
   gd_set_case_name: 'caseName',
   gd_set_callback_data: 'callbackData',
+  gd_add_bonus: 'pointsBreakdown',
   gd_set_data: 'dataField',
   gd_set_points: 'postRule',
 }

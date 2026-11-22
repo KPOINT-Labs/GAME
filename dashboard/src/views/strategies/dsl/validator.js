@@ -11,6 +11,9 @@
 
 import {
   ARITH_OPS,
+  BASE_COMPONENT_KEY,
+  BONUS_KEY_REGEX,
+  BONUS_MODES,
   CASE_NAME_REGEX,
   COMPARE_OPS,
   DATA_PATH_REGEX,
@@ -36,6 +39,7 @@ const STATEMENT_TYPES = new Set([
   'veto',
   'set_points',
   'set_case_name',
+  'add_bonus',
 ])
 
 const PARENT_FIELD_PATH_SET = new Set(PARENT_FIELD_PATHS)
@@ -186,6 +190,24 @@ function validateStatement(node, errors, nodeCount, context = 'rule') {
   if (node.type === 'set_callback_data') {
     if (typeof node.key !== 'string' || node.key.length === 0) {
       fail(errors, node.id, 'set_callback_data.key must be a non-empty string.')
+    }
+    validateExpression(node.value, errors, nodeCount, context)
+    return
+  }
+  if (node.type === 'add_bonus') {
+    if (
+      typeof node.key !== 'string' ||
+      !BONUS_KEY_REGEX.test(node.key) ||
+      node.key === BASE_COMPONENT_KEY
+    ) {
+      fail(
+        errors,
+        node.id,
+        `add_bonus.key must be 1-64 characters of [A-Za-z0-9_] and not '${BASE_COMPONENT_KEY}'.`,
+      )
+    }
+    if ('mode' in node && !BONUS_MODES.includes(node.mode)) {
+      fail(errors, node.id, `add_bonus.mode must be one of: ${BONUS_MODES.join(', ')}.`)
     }
     validateExpression(node.value, errors, nodeCount, context)
     return

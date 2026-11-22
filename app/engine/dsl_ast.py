@@ -25,9 +25,10 @@ from the request payload, never live attribute lookups.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterable, Optional, Set, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 # Node types
 # The handler tables in dsl_validator and dsl_interpreter dispatch on these
@@ -72,6 +73,14 @@ NODE_VETO = "veto"
 NODE_SET_POINTS = "set_points"
 NODE_SET_CASE_NAME = "set_case_name"
 
+# Adds a named bonus to the run's points breakdown without halting. Bonuses
+# accumulate across matched rules (like set_callback_data) and are added to
+# the ``assign_points`` value of the rule that ends the run, which becomes
+# the ``base`` component; a run ended by ``default`` discards them. Optional
+# ``mode``: "fixed" (default, value is points) or "multiplier" (value is a
+# factor of the base). Main ``rules`` only (see ``build_points_breakdown``).
+NODE_ADD_BONUS = "add_bonus"
+
 
 ALL_NODE_TYPES: Set[str] = {
     NODE_PROGRAM,
@@ -91,6 +100,7 @@ ALL_NODE_TYPES: Set[str] = {
     NODE_VETO,
     NODE_SET_POINTS,
     NODE_SET_CASE_NAME,
+    NODE_ADD_BONUS,
 }
 
 CONDITION_NODE_TYPES: Set[str] = {
@@ -117,6 +127,7 @@ STATEMENT_NODE_TYPES: Set[str] = {
     NODE_VETO,
     NODE_SET_POINTS,
     NODE_SET_CASE_NAME,
+    NODE_ADD_BONUS,
 }
 
 
@@ -134,6 +145,7 @@ STATEMENT_ALLOWED_CONTEXTS: Dict[str, Set[str]] = {
     NODE_VETO: {"pre"},
     NODE_SET_POINTS: {"post"},
     NODE_SET_CASE_NAME: {"post"},
+    NODE_ADD_BONUS: {"rule"},
 }
 
 
@@ -174,6 +186,86 @@ _DATA_KEY_RE = re.compile(r"^[A-Za-z0-9_]+$")
 # strategy `name` cap so dashboards don't have to special-case it.
 CASE_NAME_MAX_LEN = 200
 _CASE_NAME_RE = re.compile(r"^[\x20-\x7E]{1,200}$")
+
+
+# Points breakdown. The ``assign_points`` value is the ``base`` component and
+# each ``add_bonus`` key is another component. Bonus keys use the data-key
+# charset and may not reuse the base key.
+BASE_COMPONENT_KEY = "base"
+BONUS_KEY_MAX_LEN = 64
+_BONUS_KEY_RE = re.compile(r"^[A-Za-z0-9_]{1,64}$")
+
+
+def is_valid_bonus_key(value: Any) -> bool:
+    """``add_bonus.key``: 1-64 chars of ``[A-Za-z0-9_]``, other than ``base``."""
+    return (
+        isinstance(value, str)
+        and bool(_BONUS_KEY_RE.match(value))
+        and value != BASE_COMPONENT_KEY
+    )
+
+
+# ``add_bonus.mode``. A fixed bonus's value is points; a multiplier's value
+# is a factor of the base points, so 2 means "double points" and adds the
+# base once more (bonus = base x (factor - 1)).
+BONUS_MODE_FIXED = "fixed"
+BONUS_MODE_MULTIPLIER = "multiplier"
+BONUS_MODES: Set[str] = {BONUS_MODE_FIXED, BONUS_MODE_MULTIPLIER}
+
+
+def _round_half_up(value: float) -> int:
+    """
+    Round to whole points, .5 upwards (2.5 -> 3, -2.5 -> -2).
+
+    Rounding half up keeps ``base + bonus`` equal to the rounded multiplied
+    total (x0.5 on 5 gives 3, not 2). The value is first rounded to 9
+    decimals so float noise (``10 * 0.15 == 1.4999999999999991``) does not
+    flip a .5.
+    """
+    return int(math.floor(round(value, 9) + 0.5))
+
+
+def bonus_points(mode: str, value: Any, base: Any) -> Any:
+    """
+    Return the points an ``add_bonus`` contributes on top of ``base``.
+
+    Fixed bonuses contribute ``value`` unchanged. Multiplier bonuses
+    contribute ``base x (value - 1)`` rounded half up to whole points (award points
+    are stored as integers), so each multiplier applies to the base alone:
+    x2 and x1.5 on a base of 10 add 10 and 5.
+    """
+    if mode == BONUS_MODE_MULTIPLIER:
+        return _round_half_up(base * (value - 1))
+    return value
+
+
+def build_points_breakdown(
+    base: Any, bonuses: List[Tuple[str, str, Any]]
+) -> Tuple[Any, Dict[str, Any]]:
+    """
+    Return ``(total, breakdown)`` for a base value plus named bonuses.
+
+    The breakdown has the shape the points service persists and checks:
+    ``{"version": 1, "components": [{"key": "base", "points": base},
+    {"key": <bonus>, "points": n}, ...]}``. A key added more than once is
+    one component holding the sum, in first-added order. ``total`` is summed
+    from the components in order, so it always matches that check exactly.
+
+    Args:
+        base: The ``assign_points`` value.
+        bonuses (List[Tuple[str, str, Any]]): ``(key, mode, value)`` per
+            ``add_bonus`` that ran, in order.
+
+    Returns:
+        tuple: ``(total, breakdown)``.
+    """
+    by_key: Dict[str, Any] = {}
+    for key, mode, value in bonuses:
+        by_key[key] = by_key.get(key, 0) + bonus_points(mode, value, base)
+    components = [{"key": BASE_COMPONENT_KEY, "points": base}]
+    components.extend({"key": key, "points": points} for key, points in by_key.items())
+    total = sum(component["points"] for component in components)
+    return total, {"version": 1, "components": components}
 
 
 @dataclass(frozen=True)

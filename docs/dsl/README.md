@@ -49,6 +49,7 @@ menu so you can jump from the editor straight to the explanation.
 | [`gd_arith`](blocks/arith.md) | Binary arithmetic: `+`, `-`, `*`, `/`, `min`, `max`.       |
 | [`gd_func_call`](blocks/func-call.md) | Built-in functions: `int(x)`, `clamp(x, lo, hi)`.  |
 | [`gd_assign_points`](blocks/assign-points.md) | Award N points with a case name and stop.   |
+| [`gd_add_bonus`](blocks/add-bonus.md) | Add a named bonus (fixed points or a multiple of the base points) on top of a rule's assigned points; stored in the points breakdown. |
 | [`gd_set_callback_data`](blocks/set-callback-data.md) | Add a key to the response payload. |
 | [`gd_pre_rule`](blocks/pre-rule.md) | Rule that runs before the parent strategy.           |
 | [`gd_post_rule`](blocks/post-rule.md) | Rule that runs after the parent strategy.          |

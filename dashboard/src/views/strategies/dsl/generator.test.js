@@ -438,3 +438,93 @@ describe('workspaceToAst - else-if / else branches (mutator)', () => {
     expect(validateAst(ast).ok).toBe(true)
   })
 })
+
+describe('workspaceToAst - add_bonus', () => {
+  it('emits add_bonus statements chained before assign_points', () => {
+    // when 1 == 1
+    //   then add_bonus "streak" = 5
+    //        assign_points 10, "Completed"
+    const ws = makeWorkspace()
+    const rule = newBlock(ws, 'gd_rule', 'r1')
+    const compare = newBlock(ws, 'gd_compare', 'c1')
+    compare.setFieldValue('==', 'OP')
+    const left = newBlock(ws, 'gd_literal_number', 'l1')
+    left.setFieldValue('1', 'VALUE')
+    const right = newBlock(ws, 'gd_literal_number', 'l2')
+    right.setFieldValue('1', 'VALUE')
+    connectChildToInput(compare, 'LEFT', left)
+    connectChildToInput(compare, 'RIGHT', right)
+    connectChildToInput(rule, 'WHEN', compare)
+
+    const bonus = newBlock(ws, 'gd_add_bonus', 'b1')
+    bonus.setFieldValue('streak', 'KEY')
+    const bonusValue = newBlock(ws, 'gd_literal_number', 'bv')
+    bonusValue.setFieldValue('5', 'VALUE')
+    connectChildToInput(bonus, 'VALUE', bonusValue)
+
+    const assign = newBlock(ws, 'gd_assign_points', 'a1')
+    assign.setFieldValue('Completed', 'CASE_NAME')
+    const base = newBlock(ws, 'gd_literal_number', 'av')
+    base.setFieldValue('10', 'VALUE')
+    connectChildToInput(assign, 'VALUE', base)
+
+    connectChildStatement(rule, 'THEN', bonus)
+    bonus.nextConnection.connect(assign.previousConnection)
+
+    const ast = workspaceToAst(ws)
+
+    expect(ast.rules[0].then).toEqual([
+      {
+        type: 'add_bonus',
+        id: 'b1',
+        key: 'streak',
+        value: { type: 'literal', id: 'bv', value: 5 },
+      },
+      {
+        type: 'assign_points',
+        id: 'a1',
+        value: { type: 'literal', id: 'av', value: 10 },
+        case_name: 'Completed',
+      },
+    ])
+    expect(validateAst(ast).ok).toBe(true)
+  })
+
+  it('fills a missing bonus value with literal 0', () => {
+    const ws = makeWorkspace()
+    const rule = newBlock(ws, 'gd_rule', 'r1')
+    const bonus = newBlock(ws, 'gd_add_bonus', 'b1')
+    connectChildStatement(rule, 'THEN', bonus)
+
+    const ast = workspaceToAst(ws)
+
+    expect(ast.rules[0].then[0]).toEqual({
+      type: 'add_bonus',
+      id: 'b1',
+      key: 'bonus',
+      value: { type: 'literal', id: 'b1_v_missing', value: 0 },
+    })
+  })
+
+  it('emits mode multiplier when the dropdown is set to x base points', () => {
+    const ws = makeWorkspace()
+    const rule = newBlock(ws, 'gd_rule', 'r1')
+    const bonus = newBlock(ws, 'gd_add_bonus', 'b1')
+    bonus.setFieldValue('streak', 'KEY')
+    bonus.setFieldValue('multiplier', 'MODE')
+    const factor = newBlock(ws, 'gd_literal_number', 'bv')
+    factor.setFieldValue('2', 'VALUE')
+    connectChildToInput(bonus, 'VALUE', factor)
+    connectChildStatement(rule, 'THEN', bonus)
+
+    const ast = workspaceToAst(ws)
+
+    expect(ast.rules[0].then[0]).toEqual({
+      type: 'add_bonus',
+      id: 'b1',
+      key: 'streak',
+      mode: 'multiplier',
+      value: { type: 'literal', id: 'bv', value: 2 },
+    })
+  })
+})

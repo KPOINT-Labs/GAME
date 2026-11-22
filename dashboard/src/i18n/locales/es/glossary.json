@@ -81,6 +81,10 @@
     "assignment": {
       "title": "Asignación",
       "body": "Relación 1:1 entre un Game (o una Task) y la estrategia que usa para puntuar. Sólo se pueden asignar estrategias publicadas. Cambiar la asignación redirige a partir del siguiente evento - no recalcula eventos pasados."
+    },
+    "pointsBreakdown": {
+      "title": "Desglose de puntos",
+      "body": "Cómo se componen los puntos de una asignación; se guarda junto a ella. Cuando se ejecuta el 'asignar puntos' de una regla, su valor es la base y cada 'sumar bono' añade un componente con nombre: puntos fijos o un múltiplo de la base (×2 la duplica). También cuentan los bonos de reglas anteriores que se cumplieron. La asignación por defecto (ninguna regla asignó puntos) no recibe bonos."
     }
   }
 }

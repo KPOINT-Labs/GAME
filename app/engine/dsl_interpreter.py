@@ -30,12 +30,19 @@ Execution semantics mirror ``app/engine/default.py``:
   assignment never run.
 * If no rule matches, the program's ``default`` section runs (if any);
   otherwise the result is ``(0, None, {})``.
+* ``add_bonus`` statements accumulate named bonuses across matched rules
+  (they do not halt). When a rule's ``assign_points`` ends the run, its
+  value is the ``base``; the result's points are base plus every bonus
+  (fixed points, or a multiplier of the base) and ``breakdown`` lists each
+  component. Bonuses are discarded when the run ends in ``default`` or with
+  no ``assign_points`` at all; ``default`` still reports a base-only
+  breakdown.
 """
 
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional, Tuple, TypedDict
 
 from app.core.exceptions import (
     DslExecutionError,
@@ -46,7 +53,9 @@ from app.engine.dsl_ast import (
     ALLOWED_ARITH_OPS,
     ALLOWED_COMPARE_OPS,
     ALLOWED_FUNC_NAMES,
+    BONUS_MODE_FIXED,
     FUNC_ARITY,
+    NODE_ADD_BONUS,
     NODE_AND,
     NODE_ARITH,
     NODE_ASSIGN_POINTS,
@@ -62,6 +71,7 @@ from app.engine.dsl_ast import (
     NODE_SET_DATA,
     NODE_SET_POINTS,
     NODE_VETO,
+    build_points_breakdown,
 )
 from app.engine.dsl_execution_context import ExecutionContext
 
@@ -77,6 +87,9 @@ class DslExecutionResult(TypedDict, total=False):
     # fired so the orchestrator skips parent + post entirely.
     working_data: Dict[str, Any]
     vetoed: bool
+    # ``{"version": 1, "components": [...]}`` when an assign_points ended
+    # a DSL_FULL run (base + add_bonus components), else None.
+    breakdown: Optional[Dict[str, Any]]
 
 
 class _DslHalt(Exception):
@@ -151,6 +164,9 @@ class DslInterpreter:
             # existing contract is unchanged.
             "working_data": state.working_data,
             "vetoed": state.vetoed,
+            # Set only when an assign_points ended the run: the base
+            # value plus every add_bonus, as persisted on the award.
+            "breakdown": state.breakdown,
         }
 
     # top-level dispatch
@@ -185,6 +201,9 @@ class DslInterpreter:
 
             default = node.get("default")
             if default is not None and not state.matched:
+                # Bonuses apply only when a rule's assign_points awards the
+                # points; the fallback default awards its value alone.
+                state.bonuses = []
                 await self._run_statement(default, ctx, state, depth=1)
             return
 
@@ -347,7 +366,10 @@ class DslInterpreter:
                         "actualType": type(value).__name__,
                     },
                 )
-            state.points = value
+            # The assigned value is the base; bonuses added so far are
+            # summed on top and the components become the breakdown.
+            # The trace keeps the base value (what this node evaluated to).
+            state.points, state.breakdown = build_points_breakdown(value, state.bonuses)
             state.case_name = node["case_name"]
             state.matched = True
             state.trace.append(
@@ -359,6 +381,51 @@ class DslInterpreter:
                 }
             )
             raise _DslHalt()
+
+        if ntype == NODE_ADD_BONUS:
+            value = await self._eval_expression(
+                node["value"], ctx, state, depth=depth + 1
+            )
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise DslExecutionError(
+                    detail="add_bonus.value must evaluate to a number.",
+                    headers={"X-Node-Id": str(node.get("id"))},
+                    code="DSL_ADD_BONUS_NOT_NUMBER",
+                    params={
+                        "nodeId": node.get("id"),
+                        "actualType": type(value).__name__,
+                    },
+                )
+            mode = node.get("mode", BONUS_MODE_FIXED)
+            if mode == BONUS_MODE_FIXED and isinstance(value, float):
+                # Award points are stored as integers, so a fractional fixed
+                # bonus could be simulated but never persisted. Reject it
+                # here (simulate and real awards alike); store whole floats
+                # (2.0) as ints. A multiplier's factor may be fractional:
+                # its bonus is rounded in build_points_breakdown.
+                if not value.is_integer():
+                    raise DslExecutionError(
+                        detail=(
+                            "add_bonus.value must be a whole number of points "
+                            "for a fixed bonus."
+                        ),
+                        headers={"X-Node-Id": str(node.get("id"))},
+                        code="DSL_ADD_BONUS_NOT_INTEGER",
+                        params={"nodeId": node.get("id"), "value": value},
+                    )
+                value = int(value)
+            # Resolved when assign_points knows the base: a multiplier is a
+            # factor of it, and the same key added twice is summed into one
+            # component (see build_points_breakdown).
+            state.bonuses.append((node["key"], mode, value))
+            state.trace.append(
+                {
+                    "nodeId": node.get("id"),
+                    "type": ntype,
+                    "value": value,
+                }
+            )
+            return
 
         if ntype == NODE_SET_CALLBACK_DATA:
             value = await self._eval_expression(
@@ -819,6 +886,11 @@ class _RunState:
         # orchestrator skips parent + post entirely.
         "working_data",
         "vetoed",
+        # Points breakdown. ``bonuses`` collects ``(key, mode, value)`` per
+        # add_bonus in run order; ``breakdown`` is set by the assign_points
+        # that ends the run and stays None otherwise.
+        "bonuses",
+        "breakdown",
     )
 
     def __init__(self) -> None:
@@ -830,6 +902,8 @@ class _RunState:
         self.matched: bool = False
         self.working_data: Dict[str, Any] = {}
         self.vetoed: bool = False
+        self.bonuses: List[Tuple[str, str, Any]] = []
+        self.breakdown: Optional[Dict[str, Any]] = None
 
 
 _COMPARE_HANDLERS = {

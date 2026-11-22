@@ -60,4 +60,22 @@ class SimulationResponse(BaseModel):
     points: float
     caseName: Optional[str] = None
     callbackData: Dict[str, Any] = Field(default_factory=dict)
+    breakdown: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Per-component explanation of `points`, as it would be stored on "
+            "the award: the `assign_points` value as `base` plus one "
+            "component per `add_bonus` key. Null when no `assign_points` "
+            "ended the run."
+        ),
+        examples=[
+            {
+                "version": 1,
+                "components": [
+                    {"key": "base", "points": 10},
+                    {"key": "streak", "points": 5},
+                ],
+            }
+        ],
+    )
     executionTrace: List[ExecutionTraceEntry] = Field(default_factory=list)

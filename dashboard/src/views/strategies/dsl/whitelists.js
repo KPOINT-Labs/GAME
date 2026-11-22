@@ -49,6 +49,7 @@ export const STATEMENT_ALLOWED_CONTEXTS = {
   veto: new Set(['pre']),
   set_points: new Set(['post']),
   set_case_name: new Set(['post']),
+  add_bonus: new Set(['rule']),
 }
 
 // Keys that are NOT valid inside parent_variables. Currently
@@ -64,6 +65,14 @@ export const CASE_NAME_REGEX = /^[\x20-\x7E]{1,200}$/
 // Mirrors app/engine/dsl_ast.py is_valid_data_path - data.<key> with
 // alphanumeric/underscore key.
 export const DATA_PATH_REGEX = /^data\.[A-Za-z0-9_]+$/
+
+// Mirrors app/engine/dsl_ast.py is_valid_bonus_key - add_bonus keys become
+// points-breakdown components next to the reserved ``base`` component.
+export const BASE_COMPONENT_KEY = 'base'
+export const BONUS_KEY_REGEX = /^[A-Za-z0-9_]{1,64}$/
+// Mirrors BONUS_MODES: a fixed bonus's value is points, a multiplier's is a
+// factor of the base points (2 = double points). Omitted means 'fixed'.
+export const BONUS_MODES = ['fixed', 'multiplier']
 
 // Mirrors backend config limit so the editor can warn the designer
 // before the backend rejects an oversized AST.

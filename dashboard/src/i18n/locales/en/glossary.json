@@ -81,6 +81,10 @@
     "assignment": {
       "title": "Assignment",
       "body": "1-to-1 relationship between a Game (or a Task) and the strategy it uses for scoring. Only published strategies can be assigned. Changing the assignment redirects from the next event onward - it does not recompute past events."
+    },
+    "pointsBreakdown": {
+      "title": "Points breakdown",
+      "body": "How an award's points add up, stored with the award. When a rule's 'assign points' fires, its value is the base and each 'add bonus' adds a named component on top: fixed points, or a multiple of the base (×2 doubles it). Bonuses from earlier rules that matched count too. The fallback assign (no rule assigned points) gets no bonuses."
     }
   }
 }

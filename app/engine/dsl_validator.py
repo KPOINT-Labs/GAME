@@ -40,10 +40,15 @@ from app.engine.dsl_ast import (
     ALLOWED_ARITH_OPS,
     ALLOWED_COMPARE_OPS,
     ALLOWED_FUNC_NAMES,
+    BASE_COMPONENT_KEY,
+    BONUS_KEY_MAX_LEN,
+    BONUS_MODE_FIXED,
+    BONUS_MODES,
     CASE_NAME_MAX_LEN,
     CONDITION_NODE_TYPES,
     EXPRESSION_NODE_TYPES,
     FUNC_ARITY,
+    NODE_ADD_BONUS,
     NODE_AND,
     NODE_ARITH,
     NODE_ASSIGN_POINTS,
@@ -66,6 +71,7 @@ from app.engine.dsl_ast import (
     STATEMENT_NODE_TYPES,
     is_known_field_path,
     is_parent_field_path,
+    is_valid_bonus_key,
     is_valid_case_name,
     is_valid_data_path,
 )
@@ -894,6 +900,39 @@ def _validate_statement(
         # is unusual). The runtime checks the resolved value is a
         # printable ASCII string.
         _assert_keys(node, ("value",), node_id=nid)
+        _validate_expression(
+            node["value"],
+            parent_id=nid,
+            index=0,
+            state=state,
+            depth=depth + 1,
+            context=context,
+        )
+        return
+
+    if ntype == NODE_ADD_BONUS:
+        # Named bonus added to the base points of the rule assign_points
+        # that ends the run; the key becomes a breakdown component. The
+        # runtime checks the resolved value is a number.
+        _assert_keys(node, ("key", "value"), node_id=nid, allowed_extra=("mode",))
+        if node.get("mode", BONUS_MODE_FIXED) not in BONUS_MODES:
+            raise DslValidationError(
+                detail=(
+                    "add_bonus.mode must be one of: "
+                    + ", ".join(sorted(BONUS_MODES))
+                    + "."
+                ),
+                headers={"X-Node-Id": nid},
+            )
+        if not is_valid_bonus_key(node["key"]):
+            raise DslValidationError(
+                detail=(
+                    "add_bonus.key must be 1-"
+                    f"{BONUS_KEY_MAX_LEN} characters of [A-Za-z0-9_] "
+                    f"and not '{BASE_COMPONENT_KEY}'."
+                ),
+                headers={"X-Node-Id": nid},
+            )
         _validate_expression(
             node["value"],
             parent_id=nid,

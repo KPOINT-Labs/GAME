@@ -711,3 +711,80 @@ describe('validateAst - else-if / else branches', () => {
     expect(errs.some((e) => /not allowed inside 'rule'/.test(e.message))).toBe(true)
   })
 })
+
+describe('validateAst - add_bonus', () => {
+  const program = (bonus, section = 'rules') => {
+    const rule = {
+      type: 'rule',
+      id: 'r1',
+      when: { type: 'literal', id: 'lt', value: true },
+      then: [bonus],
+    }
+    const ast = { type: 'program', id: 'p', rules: [] }
+    ast[section] = [rule]
+    if (section === 'rules') {
+      rule.then.push({
+        type: 'assign_points',
+        id: 'a1',
+        value: { type: 'literal', id: 'lv', value: 10 },
+        case_name: 'Completed',
+      })
+    } else {
+      // Keep the program non-empty so only the misplaced bonus fails.
+      ast.rules = [
+        {
+          type: 'rule',
+          id: 'r0',
+          when: { type: 'literal', id: 'l0', value: true },
+          then: [
+            {
+              type: 'assign_points',
+              id: 'a0',
+              value: { type: 'literal', id: 'v0', value: 1 },
+              case_name: 'Ok',
+            },
+          ],
+        },
+      ]
+    }
+    return ast
+  }
+  const bonus = (key) => ({
+    type: 'add_bonus',
+    id: 'b1',
+    key,
+    value: { type: 'literal', id: 'bv', value: 5 },
+  })
+
+  it('accepts add_bonus before assign_points in a main rule', () => {
+    _ok(program(bonus('streak_7')))
+  })
+
+  it.each(['base', '', 'first-time', 'x'.repeat(65), 5])('rejects bonus key %j', (key) => {
+    const errors = _errors(program(bonus(key)))
+    expect(errors[0].nodeId).toBe('b1')
+    expect(errors[0].message).toMatch(/add_bonus\.key/)
+  })
+
+  it.each(['pre_rules', 'post_rules'])('rejects add_bonus inside %s', (section) => {
+    const errors = _errors(program(bonus('streak'), section))
+    expect(errors[0].message).toMatch(/not allowed inside/)
+  })
+
+  it('rejects add_bonus as the default statement', () => {
+    const ast = program(bonus('streak'))
+    ast.default = bonus('streak')
+    ast.default.id = 'd1'
+    const errors = _errors(ast)
+    expect(errors.some((e) => e.nodeId === 'd1')).toBe(true)
+  })
+
+  it.each(['fixed', 'multiplier'])('accepts mode %s', (mode) => {
+    _ok(program({ ...bonus('streak'), mode }))
+  })
+
+  it.each(['percent', '', null])('rejects mode %j', (mode) => {
+    const errors = _errors(program({ ...bonus('streak'), mode }))
+    expect(errors[0].message).toMatch(/add_bonus\.mode/)
+  })
+})

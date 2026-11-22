@@ -8,6 +8,10 @@ and delegates the atomic write to
 import logging
 
 from app.core.exceptions import (
+    DslExecutionError,
+    DslLimitExceededError,
+    DslTimeoutError,
+    DslValidationError,
     InternalServerError,
     NotFoundError,
     PreconditionFailedError,
@@ -263,6 +267,23 @@ class PointsAssignmentMixin(PointsPersistenceMixin):
             )
             if callbackData is not None:
                 data_to_add["callbackData"] = callbackData
+        except (
+            DslExecutionError,
+            DslLimitExceededError,
+            DslTimeoutError,
+            DslValidationError,
+        ) as exc:
+            # A custom strategy's runtime error (e.g. a bonus that is not a
+            # whole number) already carries its HTTP status and a
+            # machine-readable code; keep them, as simulate does, instead of
+            # hiding them behind the generic 500 below.
+            logger.warning(
+                "DSL strategy error for externalTaskId=%s externalUserId=%s: %s",
+                externalTaskId,
+                externalUserId,
+                getattr(exc, "code", None),
+            )
+            raise
         except (KeyError, TypeError, ValueError) as exc:
             logger.warning(
                 "Invalid scoring payload for externalTaskId=%s externalUserId=%s: %s",
