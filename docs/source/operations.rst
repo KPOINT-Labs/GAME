@@ -381,6 +381,36 @@ What happens when PostgreSQL is stopped, crashes or becomes unreachable:
   everything if its disk is lost; set up scheduled backups (``pg_dump`` or
   WAL archiving) and test restores.
 
+Redis outages
+=============
+
+Redis is optional (``APIKEY_CACHE_BACKEND`` / ``ABUSE_PREVENTION_BACKEND``),
+and losing it at runtime does not fail requests
+(``app/services/redis_resilience.py``):
+
+* **API key cache**: lookups use a per-process in-memory cache instead, i.e.
+  the ``memory`` backend's behaviour. Authentication keeps working; a key
+  revoked during the outage is evicted locally at once and reaches other
+  workers within ``API_KEY_HEADER_CACHE_TTL_SECONDS`` (default 5 s).
+* **Rate limiting**: counters are kept in the database
+  (``abuse_limit_counter``) instead, so limits stay enforced. Counts start
+  afresh there, so a window that spans the switch can admit up to twice its
+  limit once.
+* **Fail fast**: calls time out after ``REDIS_SOCKET_TIMEOUT_MS`` (500 ms)
+  and are not retried. After a failure Redis is skipped for
+  ``REDIS_FAILURE_COOLDOWN_SECONDS`` (5 s), so only the first request (and
+  then one request per cool-down, which probes Redis) pays the timeout; the
+  rest use the fallback immediately.
+* **Recovery is automatic** on the first successful probe; no restart.
+* Each outage logs one warning per worker and feature ("Redis unavailable
+  for ...") and one "available again" line. Metrics:
+  ``redis_unavailable_total`` and ``redis_fallback_total`` (by
+  ``component``); alert ``RedisUnavailableFallbackActive``.
+* In tests against a real Redis: frozen (``docker pause``), the first
+  request took about 1 s (two 500 ms timeouts) and following requests about
+  0.2 ms; stopped (connection refused), requests fell back instantly; both
+  recovered on the next probe.
+
 Scaling guidance
 ================
 

@@ -26,7 +26,7 @@ state of `main`; dates are intentionally absent.
 | Data exports (CSV-style history) | **Stable** | Recorded in `ExportAuditLog`. |
 | No-code DSL (custom strategies) | **Experimental** | Production-usable and sandboxed; scoring semantics mirror `default`. Editor and block reference still evolving. |
 | Dashboard (React admin UI) | **Experimental** | Works for core flows; known UX gaps tracked internally. |
-| Redis cache | **Experimental / optional** | Off by default; enable via configuration. |
+| Redis cache | **Experimental / optional** | Off by default; enable via configuration. If Redis fails at runtime, the API key cache and rate limiting fall back (per-process cache / database counters) instead of failing requests. |
 | `getis_ord_gi_star` (Gi\* spatial strategy) | **Experimental** | Hot-spot computation works standalone but is **not wired into scoring**: it does not subclass `BaseStrategy` and its `calculate_points` is a stub. |
 | Refunds / reversals / ledger adjustments | **Planned** | No refund operation today; the ledger is immutable. Reserved transaction types exist in the model but are never emitted (see below). |
 | Point/coin transfers between users | **Planned** | Reserved `TransferPoints` / `TransferCoins` types; not implemented. |

@@ -360,6 +360,16 @@ class Configs(BaseSettings):
         "RATE_LIMIT_REDIS_KEY_PREFIX", "game:rl:"
     )
     RATE_LIMIT_TTL_BUFFER_SECONDS: int = _env_to_int("RATE_LIMIT_TTL_BUFFER_SECONDS", 5)
+    # Redis is optional at runtime too: when it is unreachable, slow or
+    # erroring, the API key cache uses a per-process cache and rate limiting
+    # counts in the database (app/services/redis_resilience.py). Calls give
+    # up after these timeouts (no retries), and after a failure Redis is
+    # skipped for REDIS_FAILURE_COOLDOWN_SECONDS before being tried again.
+    REDIS_SOCKET_TIMEOUT_MS: int = _env_to_int("REDIS_SOCKET_TIMEOUT_MS", 500)
+    REDIS_CONNECT_TIMEOUT_MS: int = _env_to_int("REDIS_CONNECT_TIMEOUT_MS", 500)
+    REDIS_FAILURE_COOLDOWN_SECONDS: int = _env_to_int(
+        "REDIS_FAILURE_COOLDOWN_SECONDS", 5
+    )
 
     SQLALCHEMY_ECHO: bool = _env_to_bool("SQLALCHEMY_ECHO", False)
     # Off by default: on a hung/partitioned server the pre-ping itself blocks

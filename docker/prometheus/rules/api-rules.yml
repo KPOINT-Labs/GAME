@@ -92,3 +92,22 @@ groups:
             {{ $labels.handler }} returned a 5xx status over the last 10
             minutes. Check the API logs and Sentry.
             Dashboard: Grafana > GAME > API Overview.
+
+      - alert: RedisUnavailableFallbackActive
+        expr: |
+          sum by (component) (rate(redis_fallback_total[5m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: game
+          component: redis
+        annotations:
+          summary: >-
+            Redis unavailable for {{ $labels.component }}; running on the fallback
+          description: |
+            {{ $labels.component }} has served requests without Redis for 10
+            minutes (API key cache: per-process cache; rate limiting:
+            database counters). Requests still succeed, but API key
+            revocations take up to API_KEY_HEADER_CACHE_TTL_SECONDS to reach
+            every worker and rate limiting adds database writes. Check Redis
+            and the "Redis unavailable" warnings in the API logs.

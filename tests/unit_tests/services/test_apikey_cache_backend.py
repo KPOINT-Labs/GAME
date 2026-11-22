@@ -222,7 +222,9 @@ def test_build_backend_returns_redis_backend_when_configured():
             backend_name="redis",
             redis_url="redis://localhost:6379/0",
             redis_key_prefix="game:apikey:",
+            socket_timeout_seconds=0.25,
+            connect_timeout_seconds=0.3,
         )
 
-    factory.assert_called_once_with("redis://localhost:6379/0")
+    factory.assert_called_once_with("redis://localhost:6379/0", 0.25, 0.3)
     assert isinstance(backend, RedisApiKeyCacheBackend)
