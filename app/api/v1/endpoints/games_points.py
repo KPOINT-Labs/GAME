@@ -145,6 +145,12 @@ Returns:
 - `422`: malformed `gameId` (invalid UUID format)
 - `500`: retrieval failure
 
+### Freshness
+When the server's response cache is enabled, this result is cached for up
+to `RESPONSE_CACHE_AGGREGATE_TTL_SECONDS` (10 minutes by default): points
+awarded in the meantime may not show yet. Changes to the game or its tasks
+are reflected immediately.
+
 <sub>**Id_endpoint:** `get_points_by_gameId`</sub>
 """  # noqa
 
@@ -276,6 +282,12 @@ Returns:
 - `404`: no game found with the provided `gameId`
 - `422`: malformed `gameId` (invalid UUID format)
 - `500`: retrieval failure
+
+### Freshness
+When the server's response cache is enabled, this result is cached for up
+to `RESPONSE_CACHE_AGGREGATE_TTL_SECONDS` (10 minutes by default): points
+awarded in the meantime may not show yet. Changes to the game or its tasks
+are reflected immediately.
 
 <sub>**Id_endpoint:** `get_points_by_gameId_with_details`</sub>
 """  # noqa
@@ -429,6 +441,14 @@ Returns:
 - `entries`: list of `rank`, `externalUserId`, `points`, `timesAwarded`
 - `user`: the requested user's row in the same shape, or `null`
 - `cohort`: the cohort filter that was applied, or `null`
+
+### Freshness
+When the server's response cache is enabled, a leaderboard is cached and
+recomputed when it expires (`RESPONSE_CACHE_LEADERBOARD_TTL_SECONDS`,
+6 hours by default), not after every award. Points awarded since then,
+including the requested user's in `user`, may not show yet. Changes to the
+game or its tasks are reflected immediately. For a user's current total,
+use the user points endpoints.
 
 ### Error Cases
 - `401`: missing or invalid auth credentials
@@ -597,6 +617,14 @@ Returns:
 - `user`: the requested user's row in the same shape, or `null`
 - `cohort`: the cohort filter that was applied, or `null`
 
+### Freshness
+When the server's response cache is enabled, a leaderboard is cached and
+recomputed when it expires (`RESPONSE_CACHE_LEADERBOARD_TTL_SECONDS`,
+6 hours by default), not after every award. Points awarded since then,
+including the requested user's in `user`, may not show yet. Changes to the
+game or its tasks are reflected immediately. For a user's current total,
+use the user points endpoints.
+
 ### Error Cases
 - `401`: missing or invalid auth credentials
 - `403`: API key rejected or inactive
@@ -740,6 +768,11 @@ Returns a list of point aggregates for the specified user in the game:
 
 A user with no points in the game, a user who does not exist, and a game
 with no tasks all return an empty list (`[]`), not `404`.
+
+### Freshness
+When the server's response cache is enabled the result is cached, but any
+points awarded or action posted for the user, and any change to the game or
+its tasks, refreshes it: the next request reflects the write.
 
 ### Error Cases
 - `401`: missing or invalid auth credentials
@@ -1631,6 +1664,12 @@ Returns a list of per-user aggregates:
 - `404`: game/task association not found
 - `422`: malformed path parameters
 - `500`: retrieval failure
+
+### Freshness
+When the server's response cache is enabled, this result is cached for up
+to `RESPONSE_CACHE_AGGREGATE_TTL_SECONDS` (10 minutes by default): points
+awarded in the meantime may not show yet. Changes to the game or its tasks
+are reflected immediately.
 
 <sub>**Id_endpoint:** `get_points_by_task_id`</sub>
 """  # noqa

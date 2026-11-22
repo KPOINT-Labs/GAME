@@ -468,7 +468,7 @@ class TestTaskService(unittest.IsolatedAsyncioTestCase):
     async def test_get_points_of_user_by_task_id_returns_zeros_when_no_points(self):
         # Unknown users and users without points in the task both get zeros
         # instead of 404.
-        self.service.get_points_by_task_id_with_details = AsyncMock(return_value=[])
+        self.service._task_points_with_details_rows = AsyncMock(return_value=[])
 
         result = await self.service.get_points_of_user_by_task_id(
             uuid4(), "task-1", "user-x"
@@ -481,7 +481,7 @@ class TestTaskService(unittest.IsolatedAsyncioTestCase):
 
     async def test_get_points_of_user_by_task_id_returns_first_matching_user(self):
         matching = SimpleNamespace(externalUserId="user-1", points=8)
-        self.service.get_points_by_task_id_with_details = AsyncMock(
+        self.service._task_points_with_details_rows = AsyncMock(
             return_value=[SimpleNamespace(externalUserId="user-2"), matching]
         )
 

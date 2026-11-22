@@ -5,7 +5,15 @@ from typing import Any
 from app.core.exceptions import NotFoundError
 from app.schema.user_points_schema import PointsAssignedToUser
 from app.services.game_access import get_authorized_game
+from app.services.response_cache import TTL_AGGREGATE, GameAccess, cached_game_read
 from app.services.task._base import TaskServiceContext
+
+
+def _row_as_dict(row: Any) -> Any:
+    """A result row as a dict, so it can be cached and serialized as JSON."""
+    if hasattr(row, "_asdict"):
+        return row._asdict()
+    return row
 
 
 class TaskPointsMixin(TaskServiceContext):
@@ -30,39 +38,76 @@ class TaskPointsMixin(TaskServiceContext):
 
         Returns:
             list: A list of points associated with the task.
+
+        With ``enforce_scope`` (the HTTP path) the result is cached for
+        ``RESPONSE_CACHE_AGGREGATE_TTL_SECONDS``: point awards do not refresh
+        it, game/task definition changes do. Rows are returned as dicts there.
         """
-        if enforce_scope:
-            game = await get_authorized_game(
-                self.game_repository,
-                gameId,
-                api_key=api_key,
-                oauth_user_id=oauth_user_id,
-                is_admin=is_admin,
-            )
-        else:
+        if not enforce_scope:
             game = await self.game_repository.read_by_column(
                 "id",
                 gameId,
                 not_found_message=f"Game not found with gameId: {gameId}",
                 only_one=True,
             )
+            return await self._task_points_rows(game.id, gameId, externalTaskId)
 
+        async def compute(game):
+            rows = await self._task_points_rows(game.id, gameId, externalTaskId)
+            return [_row_as_dict(row) for row in rows]
+
+        return await self._cached_task_aggregate(
+            "task_points",
+            gameId,
+            externalTaskId,
+            GameAccess(api_key, oauth_user_id, is_admin, enforce_scope),
+            compute,
+        )
+
+    async def _task_points_rows(self, game_id, gameId, externalTaskId) -> Any:
+        """Points per user in a task (uncached rows); 404 if no such task."""
         task = await self.task_repository.read_by_gameId_and_externalTaskId(
-            game.id, externalTaskId
+            game_id, externalTaskId
         )
         if not task:
             raise NotFoundError(
                 f"Task not found with externalTaskId: {externalTaskId} for "
                 f"gameId: {gameId}"
             )
+        return await self.user_points_repository.get_all_UserPoints_by_taskId(task.id)
 
-        task_id = task.id
+    async def _cached_task_aggregate(
+        self, namespace, gameId, externalTaskId, access: GameAccess, compute
+    ) -> Any:
+        """
+        Serve a task-wide aggregate from the response cache (scoped callers).
 
-        user_points = await self.user_points_repository.get_all_UserPoints_by_taskId(
-            task_id
+        Args:
+            namespace (str): Cache namespace.
+            gameId: Internal game identifier.
+            externalTaskId (str): External task identifier.
+            access (GameAccess): Caller scope (``enforce_scope`` is set).
+            compute: Builds the JSON-ready result from the authorized game.
+
+        Returns:
+            list[dict]: The aggregate rows as dicts.
+        """
+        return await cached_game_read(
+            self.response_cache,
+            namespace=namespace,
+            game_id=gameId,
+            access=access,
+            load_game=lambda: get_authorized_game(
+                self.game_repository,
+                gameId,
+                api_key=access.api_key,
+                oauth_user_id=access.oauth_user_id,
+                is_admin=access.is_admin,
+            ),
+            compute=compute,
+            params={"externalTaskId": externalTaskId},
+            ttl_group=TTL_AGGREGATE,
         )
-
-        return user_points
 
     async def get_points_of_user_by_task_id(
         self,
@@ -89,15 +134,18 @@ class TaskPointsMixin(TaskServiceContext):
 
         Raises:
             NotFoundError: If the task does not exist in the game.
+
+        Per-user read: not cached (only the task-wide aggregates are).
         """
-        points_task = await self.get_points_by_task_id_with_details(
-            gameId,
-            externalTaskId,
-            api_key=api_key,
-            oauth_user_id=oauth_user_id,
-            is_admin=is_admin,
-            enforce_scope=enforce_scope,
-        )
+        if enforce_scope:
+            await get_authorized_game(
+                self.game_repository,
+                gameId,
+                api_key=api_key,
+                oauth_user_id=oauth_user_id,
+                is_admin=is_admin,
+            )
+        points_task = await self._task_points_with_details_rows(gameId, externalTaskId)
         user_points = list(
             filter(lambda x: x.externalUserId == externalUserId, points_task)
         )
@@ -127,16 +175,28 @@ class TaskPointsMixin(TaskServiceContext):
 
         Returns:
             list: A list of points associated with the task.
-        """
-        if enforce_scope:
-            await get_authorized_game(
-                self.game_repository,
-                gameId,
-                api_key=api_key,
-                oauth_user_id=oauth_user_id,
-                is_admin=is_admin,
-            )
 
+        With ``enforce_scope`` (the HTTP path) the result is cached like
+        :meth:`get_points_by_task_id`, and rows are returned as dicts (the
+        endpoint's ``List[dict]`` response model rejects raw rows).
+        """
+        if not enforce_scope:
+            return await self._task_points_with_details_rows(gameId, externalTaskId)
+
+        async def compute(game):
+            rows = await self._task_points_with_details_rows(game.id, externalTaskId)
+            return [_row_as_dict(row) for row in rows]
+
+        return await self._cached_task_aggregate(
+            "task_points_details",
+            gameId,
+            externalTaskId,
+            GameAccess(api_key, oauth_user_id, is_admin, enforce_scope),
+            compute,
+        )
+
+    async def _task_points_with_details_rows(self, gameId, externalTaskId) -> Any:
+        """Detailed points per user in a task (uncached rows); 404 if no task."""
         task = await self.task_repository.read_by_gameId_and_externalTaskId(
             gameId, externalTaskId
         )
@@ -145,10 +205,6 @@ class TaskPointsMixin(TaskServiceContext):
                 f"Task not found with externalTaskId: {externalTaskId} for "
                 f"gameId: {gameId}"
             )
-
-        task_id = task.id
-
-        user_points = await self.user_points_repository.get_all_UserPoints_by_taskId_with_details(  # noqa: E501
-            task_id
+        return await self.user_points_repository.get_all_UserPoints_by_taskId_with_details(  # noqa: E501
+            task.id
         )
-        return user_points

@@ -24,6 +24,7 @@ from app.repository.user_repository import UserRepository
 from app.repository.wallet_repository import WalletRepository
 from app.repository.wallet_transaction_repository import WalletTransactionRepository
 from app.services.base_service import BaseService
+from app.services.response_cache import NullResponseCache, ResponseCache
 from app.services.strategy_service import StrategyService
 from app.services.user_points import (
     PointsActivityMixin,
@@ -54,6 +55,7 @@ class UserPointsService(
         strategy_service: "StrategyService | None" = None,
         game_params_repository: GameParamsRepository | None = None,
         cohort_repository: CohortRepository | None = None,
+        response_cache: ResponseCache | None = None,
     ) -> None:
         self.user_points_repository = user_points_repository
         self.users_repository = users_repository
@@ -74,4 +76,6 @@ class UserPointsService(
         # preserves the legacy behaviour for tests that build this
         # service positionally and monkey-patch ``self.strategy_service``.
         self.strategy_service = strategy_service or StrategyService()
+        # Caches the leaderboards; omitted, nothing is cached.
+        self.response_cache = response_cache or NullResponseCache()
         super().__init__(user_points_repository)

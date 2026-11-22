@@ -531,8 +531,7 @@ With ``RESPONSE_CACHE_ENABLED=true`` (and ``REDIS_URL``), read results are
 cached in Redis (``app/services/response_cache.py``). Every API replica and
 worker shares the cache.
 
-**What is cached.** Results that only change when a game or task is
-written:
+**What is cached.**
 
 .. list-table::
    :header-rows: 1
@@ -548,12 +547,44 @@ written:
      - patching or deleting that game; creating (also in bulk), duplicating,
        patching or deleting one of its tasks; a custom strategy rollback that
        re-points games or tasks
+   * - ``GET /games/{gameId}/leaderboard``,
+       ``/games/{gameId}/tasks/{externalTaskId}/leaderboard``
+     - the same game and task changes, but **not** point awards: a cached
+       page (per ``limit``, ``offset``, ``cohort`` and ``externalUserId``) is
+       served until ``RESPONSE_CACHE_LEADERBOARD_TTL_SECONDS`` (6 h) passes,
+       then recomputed
+   * - ``GET /games/{gameId}/users/{externalUserId}/points``
+     - the same game and task changes, plus every points award
+       (``POST .../tasks/{externalTaskId}/points``,
+       ``POST /users/external/{externalUserId}/points``) and every action
+       (``POST .../tasks/{externalTaskId}/action``,
+       ``POST /users/{externalUserId}/actions``) for that user. Only that
+       user's entries are dropped; other users' stay cached.
+   * - ``GET /games/{gameId}/points``, ``/points/details``,
+       ``/games/{gameId}/users``,
+       ``/games/{gameId}/tasks/{externalTaskId}/points``,
+       ``/games/{gameId}/tasks/{externalTaskId}/points/details``
+     - the same game and task changes, but **not** point awards: served
+       until ``RESPONSE_CACHE_AGGREGATE_TTL_SECONDS`` (10 min) passes
+   * - ``GET /strategies/custom/{id}/usage``, ``/{id}/metrics``,
+       ``/compare``
+     - nothing; cached per caller realm and parameters until
+       ``RESPONSE_CACHE_AGGREGATE_TTL_SECONDS`` (10 min) passes
+   * - ``GET /dashboard/summary``, ``/dashboard/summary/logs``
+     - nothing; cached per date range and grouping (the data is not
+       per caller) until ``RESPONSE_CACHE_AGGREGATE_TTL_SECONDS`` passes
 
-Points, leaderboards, wallets and other per-user data are not cached yet.
+Wallets and the other per-user endpoints are not cached yet.
+
+**Expiring popular entries.** When a cached result expires, concurrent
+requests for it in one worker wait for a single recomputation instead of
+each querying the database (``response_cache_coalesced_total``), so an
+expiring leaderboard costs at most one query per worker.
 
 **How invalidation works.** Each cached result's key includes the current
 *version* of every entity it depends on: the game's definition, the list of
-games, and a global epoch. A write gives the affected entities a new random
+games, a user's activity (``user:<externalUserId>:activity``), and a global
+epoch. A write gives the affected entities a new random
 version after it commits, so later reads compute and cache a fresh result.
 Results cached under an old version are never read again and expire on
 their TTL (one day by default). Because every write through the API
@@ -584,9 +615,16 @@ counters.
 
 * ``response_cache_requests_total{namespace, result}``: ``hit``, ``miss``
   or ``bypass`` per cached read (``game``, ``game_strategy``,
-  ``game_tasks``, ``game_task``, ``games_list``).
+  ``game_tasks``, ``game_task``, ``games_list``, ``leaderboard``,
+  ``task_leaderboard``, ``user_points_in_game``, ``game_points``,
+  ``game_points_details``, ``game_users``, ``task_points``,
+  ``task_points_details``, ``strategy_usage``, ``strategy_metrics``,
+  ``strategy_compare``, ``dashboard_summary``, ``dashboard_summary_logs``).
+* ``response_cache_coalesced_total{namespace}``: misses that shared a
+  computation already running in the worker.
 * ``response_cache_invalidations_total{entity}``: version changes by entity
-  type (``game:def``, ``games:list``, ``games:all``, ``epoch``).
+  type (``game:def``, ``games:list``, ``games:all``, ``user:activity``,
+  ``epoch``).
 * ``response_cache_lost_invalidations_total``: version changes lost to a
   Redis outage (each later triggers an epoch change).
 * ``response_cache_oversize_total{namespace}``: results too large to cache

@@ -40,6 +40,12 @@ from app.schema.strategy_observability_schema import (
     StrategyComparisonResponse,
     StrategyMetricsResponse,
 )
+from app.services.response_cache import (
+    TTL_AGGREGATE,
+    NullResponseCache,
+    ResponseCache,
+    cached_read,
+)
 from app.services.strategy_definition_service import StrategyDefinitionService
 
 # Bucket edges chosen to align with the Prometheus histogram in
@@ -180,9 +186,13 @@ class StrategyObservabilityService:
         self,
         execution_log_repository: StrategyExecutionLogRepository,
         strategy_definition_service: StrategyDefinitionService,
+        response_cache: Optional[ResponseCache] = None,
     ) -> None:
         self._repo = execution_log_repository
         self._strategy_definition_service = strategy_definition_service
+        # Caches metrics and comparisons per realm for
+        # RESPONSE_CACHE_AGGREGATE_TTL_SECONDS; omitted, nothing is cached.
+        self.response_cache = response_cache or NullResponseCache()
 
     async def get_metrics(
         self,
@@ -197,7 +207,36 @@ class StrategyObservabilityService:
         Resolves the strategy first so the response includes name +
         version + status - and so cross-realm probes 404 before we
         spend a query on the execution log.
+
+        Cached per realm, id and window for
+        ``RESPONSE_CACHE_AGGREGATE_TTL_SECONDS`` (10 min by default).
         """
+        return await cached_read(
+            self.response_cache,
+            namespace="strategy_metrics",
+            versions=[],
+            params={
+                "realmId": realmId,
+                "id": id,
+                "since": sinceDt,
+                "until": untilDt,
+            },
+            ttl_group=TTL_AGGREGATE,
+            compute=lambda: self._get_metrics_uncached(
+                id=id, realmId=realmId, sinceDt=sinceDt, untilDt=untilDt
+            ),
+            model=StrategyMetricsResponse,
+        )
+
+    async def _get_metrics_uncached(
+        self,
+        *,
+        id: str,
+        realmId: Optional[str],
+        sinceDt: Optional[datetime],
+        untilDt: Optional[datetime],
+    ) -> StrategyMetricsResponse:
+        """Uncached body of :meth:`get_metrics`."""
         strategy = await self._strategy_definition_service.get_strategy(
             id=id, realmId=realmId
         )
@@ -219,7 +258,39 @@ class StrategyObservabilityService:
         """Run the metrics aggregation twice in parallel-ish (awaited
         sequentially since each takes ~5 narrow queries) and compute
         deltas server-side. Both ids are validated through the same
-        get_strategy path so neither can leak from a foreign realm."""
+        get_strategy path so neither can leak from a foreign realm.
+
+        Cached per realm, pair and window for
+        ``RESPONSE_CACHE_AGGREGATE_TTL_SECONDS``; each side also uses the
+        cached metrics."""
+        return await cached_read(
+            self.response_cache,
+            namespace="strategy_compare",
+            versions=[],
+            params={
+                "realmId": realmId,
+                "a": idA,
+                "b": idB,
+                "since": sinceDt,
+                "until": untilDt,
+            },
+            ttl_group=TTL_AGGREGATE,
+            compute=lambda: self._compare_uncached(
+                idA=idA, idB=idB, realmId=realmId, sinceDt=sinceDt, untilDt=untilDt
+            ),
+            model=StrategyComparisonResponse,
+        )
+
+    async def _compare_uncached(
+        self,
+        *,
+        idA: str,
+        idB: str,
+        realmId: Optional[str],
+        sinceDt: Optional[datetime],
+        untilDt: Optional[datetime],
+    ) -> StrategyComparisonResponse:
+        """Uncached body of :meth:`compare`."""
         a = await self.get_metrics(
             id=idA, realmId=realmId, sinceDt=sinceDt, untilDt=untilDt
         )

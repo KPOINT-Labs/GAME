@@ -1,5 +1,5 @@
 import copy
-from typing import Any
+from typing import Any, Optional
 
 from app.core.config import configs
 from app.repository.task_repository import TaskRepository
@@ -22,6 +22,7 @@ from app.schema.wallet_schema import CreateWallet
 from app.schema.wallet_transaction_schema import BaseWalletTransaction
 from app.services.base_service import BaseService
 from app.services.game_access import get_authorized_user
+from app.services.response_cache import NullResponseCache, ResponseCache, user_entity
 from app.util.serialize_wallet import serialize_wallet
 
 
@@ -46,6 +47,7 @@ class UserService(BaseService):
         task_repository: TaskRepository,
         wallet_repository: WalletRepository,
         wallet_transaction_repository: WalletTransactionRepository,
+        response_cache: Optional[ResponseCache] = None,
     ) -> None:
         """
         Initializes the UserService with the provided repositories.
@@ -61,6 +63,7 @@ class UserService(BaseService):
               wallet transaction repository instance.
         """
         self.user_repository = user_repository
+        self.response_cache = response_cache or NullResponseCache()
         self.user_points_repository = user_points_repository
         self.task_repository = task_repository
         self.wallet_repository = wallet_repository
@@ -293,6 +296,7 @@ class UserService(BaseService):
         )
 
         user_points = await self.user_points_repository.create(user_points_schema)
+        await self.response_cache.invalidate(user_entity(user.externalUserId))
 
         wallet = await self.wallet_repository.read_by_column(
             "userId", str(user.id), not_found_raise_exception=False
