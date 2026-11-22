@@ -112,14 +112,14 @@ class TaskQueryMixin(TaskServiceContext):
         )
         all_tasks = await self.task_repository.read_by_gameId(find_task_query)
 
-        strategy_data = self.strategy_service.get_strategy_by_id(game.strategyId)
+        strategy_data = self.strategy_service.describe_strategy(game.strategyId)
         game_params = await self.game_params_repository.read_by_column(
             "gameId", game.id, not_found_raise_exception=False, only_one=False
         )
         apply_strategy_variable_overrides(game_params, strategy_data)
         cleaned_tasks = []
         for task in all_tasks["items"]:
-            strategy_data = self.strategy_service.get_strategy_by_id(task.strategyId)
+            strategy_data = self.strategy_service.describe_strategy(task.strategyId)
             task_params = await self.task_params_repository.read_by_column(
                 "taskId", task.id, not_found_raise_exception=False, only_one=False
             )
@@ -185,7 +185,7 @@ class TaskQueryMixin(TaskServiceContext):
                 f"gameId: {gameId}"
             )
 
-        strategy_data = self.strategy_service.get_strategy_by_id(task.strategyId)
+        strategy_data = self.strategy_service.describe_strategy(task.strategyId)
 
         game_params = await self.game_params_repository.read_by_column(
             "gameId", game.id, not_found_raise_exception=False, only_one=False

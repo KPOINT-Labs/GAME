@@ -196,7 +196,7 @@ class World:
             ]
         )
         self.strategy_service = MagicMock(spec=StrategyService)
-        self.strategy_service.get_strategy_by_id.side_effect = lambda _id: _strategy()
+        self.strategy_service.describe_strategy.side_effect = lambda _id: _strategy()
 
         self.game_service = GameService(
             game_repository=self.game_repository,

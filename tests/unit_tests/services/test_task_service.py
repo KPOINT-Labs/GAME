@@ -145,7 +145,7 @@ class TestTaskService(unittest.IsolatedAsyncioTestCase):
                 },
             )
 
-        self.strategy_service_instance.get_strategy_by_id.side_effect = strategy_factory
+        self.strategy_service_instance.describe_strategy.side_effect = strategy_factory
         game_params = [
             CreateGameParams(key="g_int", value="7"),
             CreateGameParams(key="g_float", value="2.5"),
@@ -202,7 +202,7 @@ class TestTaskService(unittest.IsolatedAsyncioTestCase):
         task = self._task(task_id, external_task_id="task-1", strategy_id="strategy-A")
         self.game_repository.read_by_id.return_value = game
         self.task_repository.read_by_gameId_and_externalTaskId.return_value = task
-        self.strategy_service_instance.get_strategy_by_id.return_value = (
+        self.strategy_service_instance.describe_strategy.return_value = (
             self._strategy_payload(
                 strategy_id="strategy-A",
                 variables={
@@ -237,6 +237,45 @@ class TestTaskService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.strategy.variables["t_str"], "task-text")
         self.assertEqual(result.gameParams, game_params)
         self.assertEqual(result.taskParams, task_params)
+
+    async def test_get_task_with_a_custom_strategy_describes_it(self):
+        game_id = uuid4()
+        task = self._task(uuid4(), external_task_id="task-1", strategy_id="custom:abc")
+        self.game_repository.read_by_id.return_value = self._game(game_id)
+        self.task_repository.read_by_gameId_and_externalTaskId.return_value = task
+        self.strategy_service_instance.describe_strategy.side_effect = (
+            StrategyService().describe_strategy
+        )
+        self.game_params_repository.read_by_column.return_value = []
+        self.task_params_repository.read_by_column.return_value = []
+
+        result = await self.service.get_task_by_gameId_externalTaskId(game_id, "task-1")
+
+        self.assertEqual(result.strategy.id, "custom:abc")
+        self.assertEqual(result.strategy.variables, {})
+
+    async def test_task_list_includes_tasks_with_custom_strategies(self):
+        game_id = uuid4()
+        self.game_repository.read_by_id.return_value = self._game(game_id)
+        self.task_repository.read_by_gameId.return_value = {
+            "items": [
+                self._task(uuid4(), external_task_id="builtin"),
+                self._task(
+                    uuid4(), external_task_id="custom", strategy_id="custom:abc"
+                ),
+            ],
+            "search_options": {},
+        }
+        self.strategy_service_instance.describe_strategy.side_effect = (
+            StrategyService().describe_strategy
+        )
+        self.game_params_repository.read_by_column.return_value = []
+        self.task_params_repository.read_by_column.return_value = []
+
+        result = await self.service.get_tasks_list_by_gameId(game_id, PostFindTask())
+
+        strategies = {t["externalTaskId"]: t["strategy"]["id"] for t in result["items"]}
+        self.assertEqual(strategies, {"builtin": "default", "custom": "custom:abc"})
 
     async def test_get_task_by_external_game_id_external_task_id_delegates(self):
         game_id = uuid4()
@@ -316,7 +355,9 @@ class TestTaskService(unittest.IsolatedAsyncioTestCase):
         game_id = uuid4()
         self.game_repository.read_by_id.return_value = self._game(game_id)
         self.task_repository.read_by_gameId_and_externalTaskId.return_value = None
-        self.strategy_service_instance.get_strategy_by_id.return_value = None
+        self.strategy_service_instance.describe_strategy.side_effect = NotFoundError(
+            detail="Strategy not found with id: missing-strategy"
+        )
         create_query = CreateTaskPost(
             externalTaskId="task-1", strategyId="missing-strategy", params=None
         )
@@ -330,7 +371,7 @@ class TestTaskService(unittest.IsolatedAsyncioTestCase):
         game_data = self._game(game_id, external_game_id="external-game-2")
         self.game_repository.read_by_id.return_value = game_data
         self.task_repository.read_by_gameId_and_externalTaskId.return_value = None
-        self.strategy_service_instance.get_strategy_by_id.return_value = (
+        self.strategy_service_instance.describe_strategy.return_value = (
             self._strategy_payload(
                 strategy_id="default",
                 variables={"k": 1},
@@ -371,7 +412,7 @@ class TestTaskService(unittest.IsolatedAsyncioTestCase):
                 },
             )
 
-        self.strategy_service_instance.get_strategy_by_id.side_effect = strategy_factory
+        self.strategy_service_instance.describe_strategy.side_effect = strategy_factory
         created_task = self._task(
             created_task_id, external_task_id="task-rich", strategy_id="strategy-A"
         )
@@ -570,6 +611,71 @@ class TestTaskServicePatch(unittest.IsolatedAsyncioTestCase):
             strategyId=strategy_id,
             status="open",
         )
+
+    def _create_ready(self, game_id):
+        self.game_repository.read_by_id.return_value = SimpleNamespace(
+            id=game_id, externalGameId="external-game-1"
+        )
+        self.task_repository.read_by_gameId_and_externalTaskId.return_value = None
+        self.task_repository.create = AsyncMock(
+            side_effect=lambda new_task: SimpleNamespace(
+                id=uuid4(), externalTaskId=new_task.externalTaskId
+            )
+        )
+        self.game_params_repository.read_by_column.return_value = []
+        self.strategy_service.describe_strategy.side_effect = (
+            StrategyService().describe_strategy
+        )
+
+    async def test_create_assigns_published_custom_strategy(self):
+        game_id = uuid4()
+        self._create_ready(game_id)
+        self.strategy_definition_service.get_strategy.return_value = SimpleNamespace(
+            id="abc", name="x", version=1, status="PUBLISHED"
+        )
+
+        result = await self.service.create_task_by_game_id(
+            game_id,
+            CreateTaskPost(externalTaskId="daily_streak", strategyId="custom:abc"),
+            api_key="api-key-xyz",
+        )
+
+        self.assertEqual(result.strategy.id, "custom:abc")
+        created = self.task_repository.create.await_args.args[0]
+        self.assertEqual(created.strategyId, "custom:abc")
+        self.strategy_definition_service.get_strategy.assert_awaited_once_with(
+            id="abc", realmId="api-key-xyz"
+        )
+
+    async def test_create_rejects_unpublished_custom_strategy(self):
+        game_id = uuid4()
+        self._create_ready(game_id)
+        self.strategy_definition_service.get_strategy.return_value = SimpleNamespace(
+            id="abc", name="x", version=1, status="DRAFT"
+        )
+
+        with self.assertRaises(BadRequestError):
+            await self.service.create_task_by_game_id(
+                game_id,
+                CreateTaskPost(externalTaskId="daily_streak", strategyId="custom:abc"),
+                api_key="api-key-xyz",
+            )
+        self.task_repository.create.assert_not_awaited()
+
+    async def test_create_rejects_custom_strategy_of_another_tenant(self):
+        game_id = uuid4()
+        self._create_ready(game_id)
+        self.strategy_definition_service.get_strategy.side_effect = NotFoundError(
+            detail="Custom strategy not found: abc"
+        )
+
+        with self.assertRaises(NotFoundError):
+            await self.service.create_task_by_game_id(
+                game_id,
+                CreateTaskPost(externalTaskId="daily_streak", strategyId="custom:abc"),
+                api_key="other-tenant-key",
+            )
+        self.task_repository.create.assert_not_awaited()
 
     async def test_patch_assigns_published_custom_strategy(self):
         game_id = uuid4()

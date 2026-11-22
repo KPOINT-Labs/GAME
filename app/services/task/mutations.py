@@ -433,21 +433,14 @@ class TaskMutationMixin(TaskServiceContext):
                 f"{create_query.externalTaskId} for gameId: {gameId}"
             )
 
-        strategy_id = create_query.strategyId
-
-        strategy_data = None
-        if strategy_id:
-            strategy_data = self.strategy_service.get_strategy_by_id(strategy_id)
-            if not strategy_data:
-                raise NotFoundError(
-                    f"Strategy not found with strategyId: {strategy_id}"
-                )
-
-        if not strategy_id:
-            strategy_id = "default"
-        strategy_data = self.strategy_service.get_strategy_by_id(strategy_id)
-
-        strategy_id = str(strategy_id)
+        strategy_id = str(create_query.strategyId or "default")
+        if is_custom_strategy_id(strategy_id):
+            # Same rule as PATCH: a PUBLISHED definition in the caller's
+            # tenant.
+            await self._validate_strategy_assignment(
+                strategy_id, api_key=api_key, oauth_user_id=oauth_user_id
+            )
+        strategy_data = self.strategy_service.describe_strategy(strategy_id)
 
         new_task_dict = create_query.model_dump()
         new_task_dict["gameId"] = str(gameId)
