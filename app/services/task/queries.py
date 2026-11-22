@@ -5,6 +5,7 @@ from typing import Any
 from app.core.exceptions import NotFoundError
 from app.schema.task_schema import CreateTaskPostSuccesfullyCreated, FindTask
 from app.services.game_access import get_authorized_game
+from app.services.response_cache import GameAccess, cached_game_read
 from app.services.task._base import (
     TaskServiceContext,
     apply_strategy_variable_overrides,
@@ -60,22 +61,52 @@ class TaskQueryMixin(TaskServiceContext):
         Returns:
             list: A list of tasks associated with the game.
         """
-        if enforce_scope:
+        access = GameAccess(api_key, oauth_user_id, is_admin, enforce_scope)
+        return await cached_game_read(
+            self.response_cache,
+            namespace="game_tasks",
+            game_id=gameId,
+            access=access,
+            params=lambda: find_query.model_dump(mode="json", exclude_none=True),
+            load_game=lambda: self._load_game_for_task_read(gameId, access),
+            compute=lambda game: self._build_tasks_list(game, find_query),
+        )
+
+    async def _load_game_for_task_read(self, gameId, access: GameAccess) -> Any:
+        """
+        Load a game for a task read, applying the caller's scope when asked.
+
+        Raises:
+            NotFoundError: If the game does not exist.
+            ForbiddenError: If the caller may not access the game.
+        """
+        if access.enforce_scope:
             game = await get_authorized_game(
                 self.game_repository,
                 gameId,
-                api_key=api_key,
-                oauth_user_id=oauth_user_id,
-                is_admin=is_admin,
+                api_key=access.api_key,
+                oauth_user_id=access.oauth_user_id,
+                is_admin=access.is_admin,
             )
         else:
             game = await self.game_repository.read_by_id(
                 gameId, not_found_raise_exception=False
             )
-
         if not game:
             raise NotFoundError(f"Game not found with gameId: {gameId}")
+        return game
 
+    async def _build_tasks_list(self, game, find_query) -> dict[str, Any]:
+        """
+        One page of a game's tasks, each with its strategy and params.
+
+        Args:
+            game: The game row.
+            find_query: Paging and filters.
+
+        Returns:
+            dict: The page (``items`` plus search options).
+        """
         find_task_query = FindTask(
             gameId=game.id, **find_query.model_dump(exclude_none=True)
         )
@@ -124,21 +155,27 @@ class TaskQueryMixin(TaskServiceContext):
         Returns:
             CreateTaskPostSuccesfullyCreated: The task details.
         """
-        if enforce_scope:
-            game = await get_authorized_game(
-                self.game_repository,
-                gameId,
-                api_key=api_key,
-                oauth_user_id=oauth_user_id,
-                is_admin=is_admin,
-            )
-        else:
-            game = await self.game_repository.read_by_id(
-                gameId, not_found_raise_exception=False
-            )
-        if not game:
-            raise NotFoundError(f"Game not found with gameId: {gameId}")
+        access = GameAccess(api_key, oauth_user_id, is_admin, enforce_scope)
+        return await cached_game_read(
+            self.response_cache,
+            namespace="game_task",
+            game_id=gameId,
+            access=access,
+            params={"externalTaskId": externalTaskId},
+            load_game=lambda: self._load_game_for_task_read(gameId, access),
+            compute=lambda game: self._build_task(game, gameId, externalTaskId),
+            model=CreateTaskPostSuccesfullyCreated,
+        )
 
+    async def _build_task(
+        self, game, gameId, externalTaskId
+    ) -> CreateTaskPostSuccesfullyCreated:
+        """
+        One task of a game with its strategy and params.
+
+        Raises:
+            NotFoundError: If the game has no such task.
+        """
         task = await self.task_repository.read_by_gameId_and_externalTaskId(
             game.id, externalTaskId
         )

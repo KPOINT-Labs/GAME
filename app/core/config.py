@@ -370,6 +370,28 @@ class Configs(BaseSettings):
     REDIS_FAILURE_COOLDOWN_SECONDS: int = _env_to_int(
         "REDIS_FAILURE_COOLDOWN_SECONDS", 5
     )
+    # Response cache (app/services/response_cache.py): read results cached in
+    # REDIS_URL, invalidated by writes through per-entity versions. Off by
+    # default; when Redis is unavailable reads skip the cache.
+    RESPONSE_CACHE_ENABLED: bool = _env_to_bool("RESPONSE_CACHE_ENABLED", False)
+    RESPONSE_CACHE_KEY_PREFIX: str = os.getenv("RESPONSE_CACHE_KEY_PREFIX", "game:rc:")
+    # Lifetime of entity version keys. Expiry only costs a cache miss; keep
+    # it above the result TTLs so results can live out their TTL.
+    RESPONSE_CACHE_VERSION_TTL_SECONDS: int = _env_to_int(
+        "RESPONSE_CACHE_VERSION_TTL_SECONDS", 172800
+    )
+    # Results larger than this (JSON bytes) are not cached. 0 = no limit.
+    RESPONSE_CACHE_MAX_ENTRY_BYTES: int = _env_to_int(
+        "RESPONSE_CACHE_MAX_ENTRY_BYTES", 262144
+    )
+    # Safety-net TTLs; writes invalidate these results immediately. Only a
+    # change made outside the API (manual SQL, scripts) waits out the TTL.
+    RESPONSE_CACHE_GAME_DEFINITION_TTL_SECONDS: int = _env_to_int(
+        "RESPONSE_CACHE_GAME_DEFINITION_TTL_SECONDS", 86400
+    )
+    RESPONSE_CACHE_GAMES_LIST_TTL_SECONDS: int = _env_to_int(
+        "RESPONSE_CACHE_GAMES_LIST_TTL_SECONDS", 86400
+    )
 
     SQLALCHEMY_ECHO: bool = _env_to_bool("SQLALCHEMY_ECHO", False)
     # Off by default: on a hung/partitioned server the pre-ping itself blocks

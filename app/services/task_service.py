@@ -18,6 +18,7 @@ from app.repository.task_repository import TaskRepository
 from app.repository.user_points_repository import UserPointsRepository
 from app.repository.user_repository import UserRepository
 from app.services.base_service import BaseService
+from app.services.response_cache import NullResponseCache, ResponseCache
 from app.services.strategy_definition_service import StrategyDefinitionService
 from app.services.strategy_service import StrategyService
 from app.services.task import TaskMutationMixin, TaskPointsMixin, TaskQueryMixin
@@ -55,6 +56,7 @@ class TaskService(
         game_params_repository: GameParamsRepository,
         task_params_repository: TaskParamsRepository,
         strategy_definition_service: Optional[StrategyDefinitionService] = None,
+        response_cache: Optional[ResponseCache] = None,
     ) -> None:
         """
         Initializes the TaskService with the provided repositories and
@@ -64,6 +66,9 @@ class TaskService(
         and tests that don't exercise ``custom:`` strategyIds keep
         working. Required for :meth:`patch_task_by_id` to validate
         ``custom:`` ids against the persistent registry.
+
+        ``response_cache`` caches the task reads and is invalidated by the
+        task writes; omitted, nothing is cached.
         """
         self.strategy_service = strategy_service
         self.task_repository = task_repository
@@ -73,4 +78,5 @@ class TaskService(
         self.game_params_repository = game_params_repository
         self.task_params_repository = task_params_repository
         self.strategy_definition_service = strategy_definition_service
+        self.response_cache = response_cache or NullResponseCache()
         super().__init__(task_repository)

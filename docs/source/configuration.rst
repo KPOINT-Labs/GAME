@@ -242,7 +242,8 @@ Abuse prevention & rate limiting
 Redis (optional, shared state)
 ==============================
 
-Only needed when a backend below is set to ``redis``.
+Only needed when a backend below is set to ``redis`` or the response cache
+is enabled.
 
 .. list-table::
    :header-rows: 1
@@ -281,6 +282,41 @@ Only needed when a backend below is set to ``redis``.
    * - ``REDIS_FAILURE_COOLDOWN_SECONDS``
      - ``5``
      - After a Redis failure, skip Redis this long before trying it again.
+
+Response cache
+==============
+
+Caches read results in ``REDIS_URL``; writes invalidate the results they
+change, so the TTLs are only a safety net (see :doc:`operations`, "Response
+cache"). Off by default.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 38 22 40
+
+   * - Variable
+     - Default
+     - Notes
+   * - ``RESPONSE_CACHE_ENABLED``
+     - ``false``
+     - Enable the cache. Needs ``REDIS_URL``; without it the cache stays off
+       (logged).
+   * - ``RESPONSE_CACHE_KEY_PREFIX``
+     - ``game:rc:``
+     - Key namespace for cached results and entity versions.
+   * - ``RESPONSE_CACHE_VERSION_TTL_SECONDS``
+     - ``172800``
+     - Lifetime of an entity's version key. An expired version only causes a
+       cache miss. Keep it above the result TTLs below.
+   * - ``RESPONSE_CACHE_MAX_ENTRY_BYTES``
+     - ``262144``
+     - Results larger than this (JSON) are not cached. ``0``: no limit.
+   * - ``RESPONSE_CACHE_GAME_DEFINITION_TTL_SECONDS``
+     - ``86400``
+     - Game, game strategy, game tasks and single task reads.
+   * - ``RESPONSE_CACHE_GAMES_LIST_TTL_SECONDS``
+     - ``86400``
+     - ``GET /games``.
 
 DSL engine limits
 =================
