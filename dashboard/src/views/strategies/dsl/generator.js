@@ -197,11 +197,12 @@ function blockToSetCallbackData(block) {
   }
 }
 
-// A named bonus added on top of the base points of the assign_points that
-// ends the run; each key becomes a component of the award's breakdown.
+// A named bonus added on top of the base points of the rule assign_points
+// that ends the run; each key becomes a component of the award's breakdown.
+// ``mode`` is emitted only for multipliers (omitted means fixed points).
 function blockToAddBonus(block) {
   const valueBlock = block.getInputTargetBlock('VALUE')
-  return {
+  const node = {
     type: 'add_bonus',
     id: block.id,
     key: block.getFieldValue('KEY') || '',
@@ -209,6 +210,8 @@ function blockToAddBonus(block) {
       ? blockToExpression(valueBlock)
       : { type: 'literal', id: `${block.id}_v_missing`, value: 0 },
   }
+  if (block.getFieldValue('MODE') === 'multiplier') node.mode = 'multiplier'
+  return node
 }
 
 // Statement converters

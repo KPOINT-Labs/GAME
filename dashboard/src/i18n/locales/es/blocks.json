@@ -23,7 +23,7 @@
     "gd_parent_variable_override": "Sobrescribe una variable_* del padre antes de su ejecución.",
     "gd_rule_elseif": "Agrega una rama 'si no, si': una condición extra que se evalúa cuando las anteriores no se cumplen.",
     "gd_rule_else": "Agrega una rama 'si no': se ejecuta cuando ninguna condición anterior se cumplió.",
-    "gd_add_bonus": "Suma un bono con nombre a los puntos del 'asignar puntos' que termina la ejecución. No termina la regla. Cada bono se guarda en el desglose de puntos de la asignación."
+    "gd_add_bonus": "Suma un bono con nombre a los puntos del 'asignar puntos' de una regla: puntos fijos o un múltiplo de los puntos base (×2 = puntos dobles). No termina la regla. No se aplica cuando solo se ejecuta la asignación por defecto. Cada bono se guarda en el desglose de puntos de la asignación."
   },
   "labels": {
     "when": "cuando",
@@ -52,7 +52,9 @@
     "setCaseName": "set caseName",
     "parent": "padre.",
     "override": "override",
-    "addBonus": "sumar bono"
+    "addBonus": "sumar bono",
+    "bonusPoints": "puntos",
+    "bonusTimesBase": "× puntos base"
   },
   "fieldsTable": {
     "title": "Campos disponibles",

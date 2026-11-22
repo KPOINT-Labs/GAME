@@ -16,7 +16,7 @@ import pytest
 
 from app.core.exceptions import DslExecutionError, DslValidationError
 from app.engine.base_strategy import BaseStrategy
-from app.engine.dsl_ast import build_points_breakdown, is_valid_bonus_key
+from app.engine.dsl_ast import bonus_points, build_points_breakdown, is_valid_bonus_key
 from app.engine.dsl_execution_context import ExecutionContext
 from app.engine.dsl_interpreter import DslInterpreter
 from app.engine.dsl_strategy import DslStrategy
@@ -38,8 +38,11 @@ def _data(node_id, key):
     return {"type": "field", "id": node_id, "path": f"data.{key}"}
 
 
-def _bonus(node_id, key, value):
-    return {"type": "add_bonus", "id": node_id, "key": key, "value": value}
+def _bonus(node_id, key, value, mode=None):
+    node = {"type": "add_bonus", "id": node_id, "key": key, "value": value}
+    if mode is not None:
+        node["mode"] = mode
+    return node
 
 
 def _assign(node_id, value, case_name="Scored"):
@@ -120,14 +123,50 @@ def _streak_program():
 
 
 def test_build_points_breakdown_puts_base_first_and_sums_components():
-    total, breakdown = build_points_breakdown(10, {"streak": 5, "quality": -2})
+    total, breakdown = build_points_breakdown(
+        10, [("streak", "fixed", 5), ("quality", "fixed", -2)]
+    )
 
     assert total == 13
     assert breakdown == _breakdown(("base", 10), ("streak", 5), ("quality", -2))
 
 
 def test_build_points_breakdown_with_no_bonuses_is_base_only():
-    assert build_points_breakdown(7, {}) == (7, _breakdown(("base", 7)))
+    assert build_points_breakdown(7, []) == (7, _breakdown(("base", 7)))
+
+
+def test_build_points_breakdown_sums_repeated_keys_across_modes():
+    total, breakdown = build_points_breakdown(
+        10, [("streak", "multiplier", 2), ("other", "fixed", 1), ("streak", "fixed", 1)]
+    )
+
+    assert total == 22
+    assert breakdown == _breakdown(("base", 10), ("streak", 11), ("other", 1))
+
+
+@pytest.mark.parametrize(
+    "base, factor, bonus",
+    [
+        (10, 2, 10),  # double points
+        (10, 3, 20),  # triple
+        (10, 1, 0),  # x1 adds nothing
+        (5, 1.5, 3),  # 2.5 rounds half up
+        (3, 1.5, 2),  # 1.5 rounds half up
+        (10, 1.15, 2),  # 1.4999999999999991 in floats; still 1.5 -> 2
+        (5, 0.5, -2),  # halving 5 gives 3 points in total
+        (10, 0, -10),  # x0 cancels the base
+        (0, 2, 0),
+    ],
+)
+def test_bonus_points_for_multipliers(base, factor, bonus):
+    assert bonus_points("multiplier", factor, base) == bonus
+    total, _ = build_points_breakdown(base, [("m", "multiplier", factor)])
+    assert total == base + bonus
+    assert isinstance(total, int)
+
+
+def test_bonus_points_for_fixed_bonus_is_the_value():
+    assert bonus_points("fixed", 2.5, 10) == 2.5
 
 
 @pytest.mark.parametrize(
@@ -183,6 +222,31 @@ def test_validator_rejects_unknown_add_bonus_keys():
     ast = _program([_rule("r", _lit("l", True), [bonus])])
 
     with pytest.raises(DslValidationError):
+        validate_ast(ast)
+
+
+@pytest.mark.parametrize("mode", ["fixed", "multiplier"])
+def test_validator_accepts_bonus_modes(mode):
+    validate_ast(
+        _program(
+            [
+                _rule(
+                    "r",
+                    _lit("l", True),
+                    [_bonus("b", "k", _lit("v", 2), mode), _assign("a", _lit("v2", 1))],
+                )
+            ]
+        )
+    )
+
+
+@pytest.mark.parametrize("mode", ["percent", "", None, 2])
+def test_validator_rejects_unknown_bonus_mode(mode):
+    bonus = _bonus("b", "k", _lit("v", 2))
+    bonus["mode"] = mode
+    ast = _program([_rule("r", _lit("l", True), [bonus])])
+
+    with pytest.raises(DslValidationError, match="add_bonus.mode"):
         validate_ast(ast)
 
 
@@ -282,17 +346,110 @@ async def test_negative_bonus_is_a_penalty():
 
 
 @pytest.mark.asyncio
-async def test_bonuses_apply_to_default_assign():
+async def test_default_assign_discards_bonuses():
+    # Bonuses need an explicit rule assign_points; the fallback default
+    # awards its own value only.
     ast = _program(
-        [_rule("r", _lit("l", True), [_bonus("b", "streak", _lit("v", 5))])],
+        [
+            _rule("r", _lit("l", True), [_bonus("b", "streak", _lit("v", 5))]),
+            _rule(
+                "r2",
+                _lit("l2", False),
+                [
+                    _bonus("b2", "x2", _lit("m", 2), "multiplier"),
+                    _assign("a", _lit("v2", 10)),
+                ],
+            ),
+        ],
         default=_assign("d", _lit("dv", 1), "Fallback"),
     )
 
     result = await _run(ast)
 
-    assert result["points"] == 6
+    assert result["points"] == 1
     assert result["case_name"] == "Fallback"
-    assert result["breakdown"] == _breakdown(("base", 1), ("streak", 5))
+    assert result["breakdown"] == _breakdown(("base", 1))
+    # The bonus statement still ran (and shows in the trace).
+    assert any(e["nodeId"] == "b" for e in result["trace"])
+
+
+@pytest.mark.asyncio
+async def test_double_points_multiplier_adds_the_base_again():
+    # The requested scenario: a 5-day streak doubles a video share's points.
+    ast = _program(
+        [
+            _rule(
+                "r_streak",
+                _when_data_gt("c", "streak_days", 4),
+                [_bonus("b", "streak", _lit("m", 2), "multiplier")],
+            ),
+            _rule(
+                "r_share", _lit("l", True), [_assign("a", _lit("v", 10), "VideoShared")]
+            ),
+        ]
+    )
+
+    with_streak = await _run(ast, data={"streak_days": 5})
+    without_streak = await _run(ast, data={"streak_days": 4})
+
+    assert with_streak["points"] == 20
+    assert with_streak["breakdown"] == _breakdown(("base", 10), ("streak", 10))
+    assert without_streak["points"] == 10
+    assert without_streak["breakdown"] == _breakdown(("base", 10))
+
+
+@pytest.mark.asyncio
+async def test_multiplier_uses_the_base_of_a_later_assign():
+    # The multiplier is recorded before the base is known and resolved
+    # against whichever rule assigns points.
+    ast = _program(
+        [
+            _rule(
+                "r1",
+                _lit("l1", True),
+                [_bonus("b", "boost", _lit("m", 1.5), "multiplier")],
+            ),
+            _rule(
+                "r2",
+                _when_data_gt("c", "level", 0),
+                [_assign("a_hi", _lit("v_hi", 20), "High")],
+            ),
+            _rule("r3", _lit("l3", True), [_assign("a_lo", _lit("v_lo", 4), "Low")]),
+        ]
+    )
+
+    assert (await _run(ast, data={"level": 1}))["breakdown"] == _breakdown(
+        ("base", 20), ("boost", 10)
+    )
+    assert (await _run(ast, data={"level": 0}))["breakdown"] == _breakdown(
+        ("base", 4), ("boost", 2)
+    )
+
+
+@pytest.mark.asyncio
+async def test_multipliers_and_fixed_bonuses_stack_on_the_base():
+    ast = _program(
+        [
+            _rule(
+                "r",
+                _lit("l", True),
+                [
+                    _bonus("b1", "streak", _lit("m1", 2), "multiplier"),
+                    _bonus("b2", "event", _lit("m2", 1.5), "multiplier"),
+                    _bonus("b3", "quality", _lit("q", 3)),
+                    _assign("a", _lit("v", 10)),
+                ],
+            )
+        ]
+    )
+
+    result = await _run(ast)
+
+    # Each multiplier applies to the base alone: 10 + 10 + 5 + 3.
+    assert result["points"] == 28
+    assert result["breakdown"] == _breakdown(
+        ("base", 10), ("streak", 10), ("event", 5), ("quality", 3)
+    )
 
 
 @pytest.mark.asyncio

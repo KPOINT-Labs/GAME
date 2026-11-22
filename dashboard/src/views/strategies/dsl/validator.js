@@ -13,6 +13,7 @@ import {
   ARITH_OPS,
   BASE_COMPONENT_KEY,
   BONUS_KEY_REGEX,
+  BONUS_MODES,
   CASE_NAME_REGEX,
   COMPARE_OPS,
   DATA_PATH_REGEX,
@@ -204,6 +205,9 @@ function validateStatement(node, errors, nodeCount, context = 'rule') {
         node.id,
         `add_bonus.key must be 1-64 characters of [A-Za-z0-9_] and not '${BASE_COMPONENT_KEY}'.`,
       )
+    }
+    if ('mode' in node && !BONUS_MODES.includes(node.mode)) {
+      fail(errors, node.id, `add_bonus.mode must be one of: ${BONUS_MODES.join(', ')}.`)
     }
     validateExpression(node.value, errors, nodeCount, context)
     return

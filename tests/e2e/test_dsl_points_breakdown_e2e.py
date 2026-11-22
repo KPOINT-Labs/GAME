@@ -1,11 +1,13 @@
 """
 Real HTTP + PostgreSQL end-to-end tests for custom-strategy points breakdowns.
 
-A published custom strategy awards 10 base points, a streak bonus when
-``data.streak_days >= 7`` (in a rule of its own, before the base rule) and a
-quality bonus taken from ``data.quality``. Each award must store
-``base`` + bonuses on ``userpoints.breakdown`` (JSONB), award their sum, and
-expose the breakdown on the points details endpoint and in simulate.
+A published custom strategy awards 10 base points for a shared item, double
+points (a x2 multiplier bonus) when ``data.streak_days >= 5`` (in a rule of
+its own, before the base rule) and a fixed quality bonus taken from
+``data.quality``. When nothing was shared the fallback ``default`` awards 1
+point without bonuses. Each award must store ``base`` + bonuses on
+``userpoints.breakdown`` (JSONB), award their sum, and expose the breakdown on
+the points details endpoint and in simulate.
 
 Everything is created under a per-run prefix and deleted afterwards.
 """
@@ -40,19 +42,25 @@ BASE_PLUS_BONUSES_AST = {
                 "type": "compare",
                 "op": ">=",
                 "left": {"type": "field", "path": "data.streak_days"},
-                "right": {"type": "literal", "value": 7},
+                "right": {"type": "literal", "value": 5},
             },
             "then": [
                 {
                     "type": "add_bonus",
                     "key": "streak",
-                    "value": {"type": "literal", "value": 5},
+                    "mode": "multiplier",
+                    "value": {"type": "literal", "value": 2},
                 }
             ],
         },
         {
             "type": "rule",
-            "when": {"type": "literal", "value": True},
+            "when": {
+                "type": "compare",
+                "op": "==",
+                "left": {"type": "field", "path": "data.shared"},
+                "right": {"type": "literal", "value": True},
+            },
             "then": [
                 {
                     "type": "add_bonus",
@@ -67,6 +75,11 @@ BASE_PLUS_BONUSES_AST = {
             ],
         },
     ],
+    "default": {
+        "type": "assign_points",
+        "value": {"type": "literal", "value": 1},
+        "case_name": "Fallback",
+    },
 }
 
 
@@ -188,13 +201,29 @@ def test_award_stores_base_and_bonuses_and_returns_their_sum(
 ):
     user = breakdown_e2e.user("streak")
 
-    result = breakdown_e2e.award(user, {"streak_days": 9, "quality": 2})
+    result = breakdown_e2e.award(user, {"shared": True, "streak_days": 9, "quality": 2})
 
-    assert result["points"] == 17
+    assert result["points"] == 22
     assert result["caseName"] == "Completed"
     assert _stored_breakdowns(postgres_engine, user) == [
-        (17, _breakdown(("base", 10), ("streak", 5), ("quality", 2)))
+        (22, _breakdown(("base", 10), ("streak", 10), ("quality", 2)))
     ]
+
+
+def test_fallback_default_awards_its_value_without_bonuses(
+    breakdown_e2e: BreakdownE2E, postgres_engine: Engine
+):
+    user = breakdown_e2e.user("fallback")
+
+    # The streak rule matches, but no rule assigns points (nothing shared),
+    # so the default's 1 point is awarded alone.
+    result = breakdown_e2e.award(
+        user, {"shared": False, "streak_days": 9, "quality": 2}
+    )
+
+    assert result["points"] == 1
+    assert result["caseName"] == "Fallback"
+    assert _stored_breakdowns(postgres_engine, user) == [(1, _breakdown(("base", 1)))]
 
 
 def test_bonus_rule_that_does_not_match_is_left_out(
@@ -202,7 +231,7 @@ def test_bonus_rule_that_does_not_match_is_left_out(
 ):
     user = breakdown_e2e.user("nostreak")
 
-    result = breakdown_e2e.award(user, {"streak_days": 1, "quality": 3})
+    result = breakdown_e2e.award(user, {"shared": True, "streak_days": 4, "quality": 3})
 
     assert result["points"] == 13
     assert _stored_breakdowns(postgres_engine, user) == [
@@ -218,7 +247,10 @@ def test_non_numeric_bonus_is_rejected_and_nothing_is_stored(
     response = breakdown_e2e.call(
         "POST",
         f"/games/{breakdown_e2e.game_id}/tasks/{TASK}/points",
-        json={"externalUserId": user, "data": {"streak_days": 1, "quality": "high"}},
+        json={
+            "externalUserId": user,
+            "data": {"shared": True, "streak_days": 1, "quality": "high"},
+        },
     )
 
     assert response.status_code >= 400, response.text
@@ -227,7 +259,7 @@ def test_non_numeric_bonus_is_rejected_and_nothing_is_stored(
 
 def test_points_details_endpoint_returns_the_breakdown(breakdown_e2e: BreakdownE2E):
     user = breakdown_e2e.user("details")
-    breakdown_e2e.award(user, {"streak_days": 7, "quality": 0})
+    breakdown_e2e.award(user, {"shared": True, "streak_days": 7, "quality": 0})
 
     details = _ok(
         breakdown_e2e.call(
@@ -242,7 +274,7 @@ def test_points_details_endpoint_returns_the_breakdown(breakdown_e2e: BreakdownE
         for award in entry.get("pointsData") or []
     ]
     assert [a["breakdown"] for a in awards] == [
-        _breakdown(("base", 10), ("streak", 5), ("quality", 0))
+        _breakdown(("base", 10), ("streak", 10), ("quality", 0))
     ]
 
 
@@ -259,14 +291,14 @@ def test_simulate_returns_the_breakdown_without_storing_it(
                 "externalGameId": breakdown_e2e.external_game_id,
                 "externalTaskId": TASK,
                 "externalUserId": user,
-                "data": {"streak_days": 8, "quality": 1},
+                "data": {"shared": True, "streak_days": 8, "quality": 1},
                 "astJson": BASE_PLUS_BONUSES_AST,
             },
         )
     )
 
-    assert result["points"] == 16
+    assert result["points"] == 21
     assert result["breakdown"] == _breakdown(
-        ("base", 10), ("streak", 5), ("quality", 1)
+        ("base", 10), ("streak", 10), ("quality", 1)
     )
     assert _stored_breakdowns(postgres_engine, user) == []

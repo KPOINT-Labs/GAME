@@ -90,6 +90,8 @@ const FALLBACK_LABELS = {
   case: 'caso',
   setCallback: 'guardar dato',
   addBonus: 'sumar bono',
+  bonusPoints: 'puntos',
+  bonusTimesBase: '× puntos base',
   equals: '=',
   preWhen: 'PRE - cuando',
   postWhen: 'POST - cuando',
@@ -629,6 +631,15 @@ export function registerDslBlocks(tFn) {
         .appendField(label('addBonus'))
         .appendField(new Blockly.FieldTextInput('bonus'), 'KEY')
       this.appendValueInput('VALUE').setCheck('Number').appendField(label('equals'))
+      // "points" adds the value as-is; "x base points" multiplies the base
+      // (2 = double points). Options are a function so labels re-localise.
+      this.appendDummyInput().appendField(
+        new Blockly.FieldDropdown(() => [
+          [label('bonusPoints'), 'fixed'],
+          [label('bonusTimesBase'), 'multiplier'],
+        ]),
+        'MODE',
+      )
       this.setInputsInline(true)
       this.setPreviousStatement(true, 'Statement')
       this.setNextStatement(true, 'Statement')

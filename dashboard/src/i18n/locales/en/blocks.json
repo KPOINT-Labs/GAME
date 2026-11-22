@@ -23,7 +23,7 @@
     "gd_parent_variable_override": "Override a variable_* of the parent before its execution.",
     "gd_rule_elseif": "Add an 'else if' branch: an extra condition checked when the ones above fail.",
     "gd_rule_else": "Add an 'else' branch: runs when no condition above matched.",
-    "gd_add_bonus": "Adds a named bonus on top of the points of the 'assign points' that ends the run. Does not end the rule. Each bonus is stored in the award's points breakdown."
+    "gd_add_bonus": "Adds a named bonus to the points of a rule's 'assign points': a fixed number of points, or a multiple of the base points (×2 = double points). Does not end the rule. Not applied when only the fallback assign runs. Each bonus is stored in the award's points breakdown."
   },
   "labels": {
     "when": "when",
@@ -52,7 +52,9 @@
     "setCaseName": "set caseName",
     "parent": "parent.",
     "override": "override",
-    "addBonus": "add bonus"
+    "addBonus": "add bonus",
+    "bonusPoints": "points",
+    "bonusTimesBase": "× base points"
   },
   "fieldsTable": {
     "title": "Available fields",

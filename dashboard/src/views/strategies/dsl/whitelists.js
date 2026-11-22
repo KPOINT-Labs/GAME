@@ -70,6 +70,9 @@ export const DATA_PATH_REGEX = /^data\.[A-Za-z0-9_]+$/
 // points-breakdown components next to the reserved ``base`` component.
 export const BASE_COMPONENT_KEY = 'base'
 export const BONUS_KEY_REGEX = /^[A-Za-z0-9_]{1,64}$/
+// Mirrors BONUS_MODES: a fixed bonus's value is points, a multiplier's is a
+// factor of the base points (2 = double points). Omitted means 'fixed'.
+export const BONUS_MODES = ['fixed', 'multiplier']
 
 // Mirrors backend config limit so the editor can warn the designer
 // before the backend rejects an oversized AST.

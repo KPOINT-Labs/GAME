@@ -31,16 +31,18 @@ Execution semantics mirror ``app/engine/default.py``:
 * If no rule matches, the program's ``default`` section runs (if any);
   otherwise the result is ``(0, None, {})``.
 * ``add_bonus`` statements accumulate named bonuses across matched rules
-  (they do not halt). The ``assign_points`` that ends the run - in a rule
-  or in ``default`` - is the ``base``; the result's points are base plus
-  every bonus and ``breakdown`` lists each component. A run that no
-  ``assign_points`` ends discards its bonuses.
+  (they do not halt). When a rule's ``assign_points`` ends the run, its
+  value is the ``base``; the result's points are base plus every bonus
+  (fixed points, or a multiplier of the base) and ``breakdown`` lists each
+  component. Bonuses are discarded when the run ends in ``default`` or with
+  no ``assign_points`` at all; ``default`` still reports a base-only
+  breakdown.
 """
 
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional, Tuple, TypedDict
 
 from app.core.exceptions import (
     DslExecutionError,
@@ -51,6 +53,7 @@ from app.engine.dsl_ast import (
     ALLOWED_ARITH_OPS,
     ALLOWED_COMPARE_OPS,
     ALLOWED_FUNC_NAMES,
+    BONUS_MODE_FIXED,
     FUNC_ARITY,
     NODE_ADD_BONUS,
     NODE_AND,
@@ -198,6 +201,9 @@ class DslInterpreter:
 
             default = node.get("default")
             if default is not None and not state.matched:
+                # Bonuses apply only when a rule's assign_points awards the
+                # points; the fallback default awards its value alone.
+                state.bonuses = []
                 await self._run_statement(default, ctx, state, depth=1)
             return
 
@@ -390,10 +396,12 @@ class DslInterpreter:
                         "actualType": type(value).__name__,
                     },
                 )
-            key = node["key"]
-            # The same key added twice (e.g. from two rules) is one
-            # component holding the sum.
-            state.bonuses[key] = state.bonuses.get(key, 0) + value
+            # Resolved when assign_points knows the base: a multiplier is a
+            # factor of it, and the same key added twice is summed into one
+            # component (see build_points_breakdown).
+            state.bonuses.append(
+                (node["key"], node.get("mode", BONUS_MODE_FIXED), value)
+            )
             state.trace.append(
                 {
                     "nodeId": node.get("id"),
@@ -862,9 +870,9 @@ class _RunState:
         # orchestrator skips parent + post entirely.
         "working_data",
         "vetoed",
-        # Points breakdown. ``bonuses`` accumulates add_bonus values by
-        # key (insertion-ordered); ``breakdown`` is set by the
-        # assign_points that ends the run and stays None otherwise.
+        # Points breakdown. ``bonuses`` collects ``(key, mode, value)`` per
+        # add_bonus in run order; ``breakdown`` is set by the assign_points
+        # that ends the run and stays None otherwise.
         "bonuses",
         "breakdown",
     )
@@ -878,7 +886,7 @@ class _RunState:
         self.matched: bool = False
         self.working_data: Dict[str, Any] = {}
         self.vetoed: bool = False
-        self.bonuses: Dict[str, Any] = {}
+        self.bonuses: List[Tuple[str, str, Any]] = []
         self.breakdown: Optional[Dict[str, Any]] = None
 
 

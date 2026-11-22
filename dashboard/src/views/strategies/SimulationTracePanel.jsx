@@ -113,16 +113,18 @@ function ConditionNode({ node, byId, t }) {
   )
 }
 
+// Whether bonuses were added to the award (its breakdown has components
+// besides ``base``). Then the assign_points value is only the base, so it is
+// labelled as such; when not (the run ended in ``default``), executed
+// add_bonus statements are marked as not applied. A context avoids
+// threading the flag through every rule component.
+const BonusesAppliedContext = createContext(false)
+
 // One executed/skipped statement inside a branch. ``decisiveId`` is the
 // nodeId of the statement that set the final points (assign_points/veto),
 // which we highlight as the outcome of the whole run.
-// Whether any add_bonus ran in this simulation. When one did, the
-// assign_points value is only the base of the award, so it is labelled as
-// such. A context avoids threading the flag through every rule component.
-const BonusRunContext = createContext(false)
-
 function StatementNode({ node, byId, t, decisiveId }) {
-  const bonusRan = useContext(BonusRunContext)
+  const bonusesApplied = useContext(BonusesAppliedContext)
   if (!node) return null
   const entry = byId.get(node.id)
   const executed = entry !== undefined
@@ -131,16 +133,19 @@ function StatementNode({ node, byId, t, decisiveId }) {
   let detail
   switch (node.type) {
     case 'assign_points':
-      detail = t(bonusRan ? 'simulate.tree.assignBasePoints' : 'simulate.tree.assignPoints', {
+      detail = t(bonusesApplied ? 'simulate.tree.assignBasePoints' : 'simulate.tree.assignPoints', {
         points: executed ? entry.value : exprToText(node.value),
         caseName: node.case_name,
       })
       break
     case 'add_bonus':
-      detail = t('simulate.tree.addBonus', {
-        key: node.key,
-        value: executed ? entry.value : exprToText(node.value),
-      })
+      detail = t(
+        node.mode === 'multiplier' ? 'simulate.tree.addBonusMultiplier' : 'simulate.tree.addBonus',
+        {
+          key: node.key,
+          value: executed ? entry.value : exprToText(node.value),
+        },
+      )
       break
     case 'veto':
       detail = t('simulate.tree.veto', { caseName: node.case_name })
@@ -178,6 +183,9 @@ function StatementNode({ node, byId, t, decisiveId }) {
       {detail}
       {!executed && (
         <span className="ms-1 text-medium-emphasis">({t('simulate.tree.notRun')})</span>
+      )}
+      {executed && node.type === 'add_bonus' && !bonusesApplied && (
+        <span className="ms-1 text-medium-emphasis">({t('simulate.tree.bonusNotApplied')})</span>
       )}
     </li>
   )
@@ -307,7 +315,7 @@ function RuleNode({ rule, index, byId, t, decisiveId }) {
   )
 }
 
-export default function SimulationTracePanel({ ast, trace }) {
+export default function SimulationTracePanel({ ast, trace, breakdown }) {
   const { t } = useTranslation('editor')
 
   if (!ast || !Array.isArray(trace)) return null
@@ -326,7 +334,8 @@ export default function SimulationTracePanel({ ast, trace }) {
     (e) => e && ((e.type === 'assign_points' && e.branch === 'match') || e.type === 'veto'),
   )
   const decisiveId = decisive ? decisive.nodeId : null
-  const bonusRan = trace.some((e) => e && e.type === 'add_bonus')
+  const bonusesApplied =
+    Array.isArray(breakdown?.components) && breakdown.components.some((c) => c && c.key !== 'base')
 
   const rules = Array.isArray(ast.rules) ? ast.rules : []
   const preRules = Array.isArray(ast.pre_rules) ? ast.pre_rules : []
@@ -359,7 +368,7 @@ export default function SimulationTracePanel({ ast, trace }) {
   const defaultEntry = ast.default ? byId.get(ast.default.id) : undefined
 
   return (
-    <BonusRunContext.Provider value={bonusRan}>
+    <BonusesAppliedContext.Provider value={bonusesApplied}>
       <div>
         {preRules.length > 0 && (
           <>
@@ -392,7 +401,7 @@ export default function SimulationTracePanel({ ast, trace }) {
           </>
         )}
       </div>
-    </BonusRunContext.Provider>
+    </BonusesAppliedContext.Provider>
   )
 }
 
@@ -432,4 +441,7 @@ RuleNode.propTypes = {
 SimulationTracePanel.propTypes = {
   ast: AST_NODE,
   trace: PropTypes.arrayOf(PropTypes.object),
+  // Simulate's ``breakdown`` ({version, components}); null when no
+  // assign_points ended the run.
+  breakdown: PropTypes.shape({ components: PropTypes.arrayOf(PropTypes.object) }),
 }

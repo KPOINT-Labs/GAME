@@ -188,7 +188,9 @@
       "postRules": "Reglas posteriores (post)",
       "default": "Por defecto",
       "assignBasePoints": "Otorga {{points}} puntos base (caso: {{caseName}})",
-      "addBonus": "Suma bono {{key}} = {{value}}"
+      "addBonus": "Suma bono {{key}} = {{value}}",
+      "addBonusMultiplier": "Suma bono {{key}} = ×{{value}} puntos base",
+      "bonusNotApplied": "no aplicado: ninguna regla asignó puntos"
     },
     "scenarios": {
       "title": "Escenarios guardados",

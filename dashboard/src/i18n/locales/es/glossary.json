@@ -84,7 +84,7 @@
     },
     "pointsBreakdown": {
       "title": "Desglose de puntos",
-      "body": "Cómo se componen los puntos de una asignación; se guarda junto a ella. El valor de 'asignar puntos' es la base y cada 'sumar bono' añade un componente con nombre. También cuentan los bonos de reglas anteriores que se cumplieron."
+      "body": "Cómo se componen los puntos de una asignación; se guarda junto a ella. Cuando se ejecuta el 'asignar puntos' de una regla, su valor es la base y cada 'sumar bono' añade un componente con nombre: puntos fijos o un múltiplo de la base (×2 la duplica). También cuentan los bonos de reglas anteriores que se cumplieron. La asignación por defecto (ninguna regla asignó puntos) no recibe bonos."
     }
   }
 }

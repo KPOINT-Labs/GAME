@@ -188,7 +188,9 @@
       "postRules": "Post-rules",
       "default": "Default",
       "assignBasePoints": "Grants {{points}} base points (case: {{caseName}})",
-      "addBonus": "Adds bonus {{key}} = {{value}}"
+      "addBonus": "Adds bonus {{key}} = {{value}}",
+      "addBonusMultiplier": "Adds bonus {{key}} = ×{{value}} base points",
+      "bonusNotApplied": "not applied: no rule assigned points"
     },
     "scenarios": {
       "title": "Saved scenarios",

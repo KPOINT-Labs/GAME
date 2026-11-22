@@ -42,6 +42,8 @@ from app.engine.dsl_ast import (
     ALLOWED_FUNC_NAMES,
     BASE_COMPONENT_KEY,
     BONUS_KEY_MAX_LEN,
+    BONUS_MODE_FIXED,
+    BONUS_MODES,
     CASE_NAME_MAX_LEN,
     CONDITION_NODE_TYPES,
     EXPRESSION_NODE_TYPES,
@@ -909,10 +911,19 @@ def _validate_statement(
         return
 
     if ntype == NODE_ADD_BONUS:
-        # Named bonus added to the base points of the assign_points that
-        # ends the run; the key becomes a breakdown component. The runtime
-        # checks the resolved value is a number.
-        _assert_keys(node, ("key", "value"), node_id=nid)
+        # Named bonus added to the base points of the rule assign_points
+        # that ends the run; the key becomes a breakdown component. The
+        # runtime checks the resolved value is a number.
+        _assert_keys(node, ("key", "value"), node_id=nid, allowed_extra=("mode",))
+        if node.get("mode", BONUS_MODE_FIXED) not in BONUS_MODES:
+            raise DslValidationError(
+                detail=(
+                    "add_bonus.mode must be one of: "
+                    + ", ".join(sorted(BONUS_MODES))
+                    + "."
+                ),
+                headers={"X-Node-Id": nid},
+            )
         if not is_valid_bonus_key(node["key"]):
             raise DslValidationError(
                 detail=(

@@ -1844,7 +1844,11 @@ const StrategyEditor = () => {
                 </h6>
                 <div className="mb-2 small" style={{ maxHeight: 340, overflow: 'auto' }}>
                   <Suspense fallback={<SkeletonCard lines={3} />}>
-                    <SimulationTracePanel ast={simAst} trace={simResult.executionTrace} />
+                    <SimulationTracePanel
+                      ast={simAst}
+                      trace={simResult.executionTrace}
+                      breakdown={simResult.breakdown}
+                    />
                   </Suspense>
                 </div>
                 <details>

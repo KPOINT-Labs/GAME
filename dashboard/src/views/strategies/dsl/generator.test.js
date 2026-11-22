@@ -505,4 +505,26 @@ describe('workspaceToAst - add_bonus', () => {
       value: { type: 'literal', id: 'b1_v_missing', value: 0 },
     })
   })
+
+  it('emits mode multiplier when the dropdown is set to x base points', () => {
+    const ws = makeWorkspace()
+    const rule = newBlock(ws, 'gd_rule', 'r1')
+    const bonus = newBlock(ws, 'gd_add_bonus', 'b1')
+    bonus.setFieldValue('streak', 'KEY')
+    bonus.setFieldValue('multiplier', 'MODE')
+    const factor = newBlock(ws, 'gd_literal_number', 'bv')
+    factor.setFieldValue('2', 'VALUE')
+    connectChildToInput(bonus, 'VALUE', factor)
+    connectChildStatement(rule, 'THEN', bonus)
+
+    const ast = workspaceToAst(ws)
+
+    expect(ast.rules[0].then[0]).toEqual({
+      type: 'add_bonus',
+      id: 'b1',
+      key: 'streak',
+      mode: 'multiplier',
+      value: { type: 'literal', id: 'bv', value: 2 },
+    })
+  })
 })

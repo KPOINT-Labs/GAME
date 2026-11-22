@@ -778,4 +778,13 @@ describe('validateAst - add_bonus', () => {
     const errors = _errors(ast)
     expect(errors.some((e) => e.nodeId === 'd1')).toBe(true)
   })
+
+  it.each(['fixed', 'multiplier'])('accepts mode %s', (mode) => {
+    _ok(program({ ...bonus('streak'), mode }))
+  })
+
+  it.each(['percent', '', null])('rejects mode %j', (mode) => {
+    const errors = _errors(program({ ...bonus('streak'), mode }))
+    expect(errors[0].message).toMatch(/add_bonus\.mode/)
+  })
 })
