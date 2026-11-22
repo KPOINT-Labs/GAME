@@ -32,7 +32,9 @@ if not db_url:
         "No DB URL found. Set ALEMBIC_DATABASE_URL or configs.DATABASE_URI"
     )
 
-config.set_main_option("sqlalchemy.url", _to_async_url(db_url))
+# "%%": the Alembic config is a ConfigParser, which treats "%" (as in a
+# percent-encoded password) as interpolation syntax.
+config.set_main_option("sqlalchemy.url", _to_async_url(db_url).replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

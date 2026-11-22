@@ -1,0 +1,7 @@
+# Copy to backend.hcl (not committed) and run:
+#   terraform init -backend-config=backend.hcl
+bucket       = "CHANGE-ME-terraform-state"
+key          = "game/prod/db/terraform.tfstate"
+region       = "CHANGE-ME-region"
+encrypt      = true
+use_lockfile = true

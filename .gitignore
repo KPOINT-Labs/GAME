@@ -148,3 +148,12 @@ dmypy.json
 .qodo
 nodel_modules
 node_modules/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+backend.hcl
+crash.log

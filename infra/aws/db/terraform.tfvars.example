@@ -1,0 +1,16 @@
+# Copy to terraform.tfvars and fill in. All values here are placeholders.
+region           = "CHANGE-ME-region"
+environment      = "prod"
+eks_cluster_name = "CHANGE-ME-eks-cluster"
+
+# IAM role of the EBS CSI driver add-on (leave empty to grant KMS use yourself).
+ebs_csi_driver_role_name = "CHANGE-ME-ebs-csi-driver-role"
+
+# Must match .env (GAMIFICATIONENGINE_NAMESPACE, _CNPG_CLUSTER_NAME, _DB_USER).
+k8s_namespace     = "gamificationengine"
+cnpg_cluster_name = "game-db"
+db_app_username   = "game_app"
+
+tags = {
+  Owner = "CHANGE-ME"
+}

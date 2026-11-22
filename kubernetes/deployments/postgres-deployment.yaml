@@ -30,11 +30,6 @@ spec:
           env:
             - name: PGDATA
               value: "/var/lib/postgresql/data/pgdata"
-            - name: DATABASE_URL
-              valueFrom:
-                configMapKeyRef:
-                  key: DATABASE_URL
-                  name: env-prod
             - name: DB_ENGINE
               valueFrom:
                 configMapKeyRef:
@@ -52,9 +47,9 @@ spec:
                   name: env-prod
             - name: DB_PASSWORD
               valueFrom:
-                configMapKeyRef:
-                  key: DB_PASSWORD
-                  name: env-prod
+                secretKeyRef:
+                  key: password
+                  name: ${GAMIFICATIONENGINE_DB_CREDENTIALS_SECRET}
             - name: DB_PORT
               valueFrom:
                 configMapKeyRef:
@@ -62,9 +57,9 @@ spec:
                   name: env-prod
             - name: DB_USER
               valueFrom:
-                configMapKeyRef:
-                  key: DB_USER
-                  name: env-prod
+                secretKeyRef:
+                  key: username
+                  name: ${GAMIFICATIONENGINE_DB_CREDENTIALS_SECRET}
             - name: DEFAULT_CONVERTION_RATE_POINTS_TO_COIN
               valueFrom:
                 configMapKeyRef:
@@ -82,14 +77,14 @@ spec:
                   name: env-prod
             - name: POSTGRES_PASSWORD
               valueFrom:
-                configMapKeyRef:
-                  key: DB_PASSWORD
-                  name: env-prod
+                secretKeyRef:
+                  key: password
+                  name: ${GAMIFICATIONENGINE_DB_CREDENTIALS_SECRET}
             - name: POSTGRES_USER
               valueFrom:
-                configMapKeyRef:
-                  key: DB_USER
-                  name: env-prod
+                secretKeyRef:
+                  key: username
+                  name: ${GAMIFICATIONENGINE_DB_CREDENTIALS_SECRET}
             - name: VERSION_APP
               valueFrom:
                 configMapKeyRef:
