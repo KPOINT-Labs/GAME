@@ -25,7 +25,8 @@ Decision
 
 Run Postgres as a CloudNativePG ``Cluster`` (``kubernetes/cnpg/``): one primary
 and two streaming replicas spread over nodes, quorum synchronous replication
-(``any 1``, ``dataDurability: preferred``) and automatic failover. The API
+(``any 1``, ``dataDurability: preferred``) and quorum-guarded automatic
+failover (``failoverQuorum``). The API
 connects through the ``<cluster>-rw`` Service, which always points at the
 current primary. The cluster starts with an empty database owned by the
 API's user; the API's Alembic migrations create the schema.
@@ -34,7 +35,10 @@ Consequences
 ============
 
 * A pod or node failure costs a failover (tens of seconds of ``503``), not
-  minutes, and no acknowledged write is lost while a replica is healthy.
+  minutes, and no acknowledged write is lost.
+* If the primary and a replica fail together, the cluster waits instead of
+  promoting a replica that may lack acknowledged commits; a manual promotion
+  is the last resort.
 * A cluster-wide operator (CRDs) must be installed and upgraded.
 * Three instances triple the storage and memory of the database.
 * The same operator provides WAL archiving and point-in-time recovery to

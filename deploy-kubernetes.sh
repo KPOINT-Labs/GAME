@@ -46,14 +46,16 @@ apply_yaml() {
         echo -e "${YELLOW}Executing command: kubectl --namespace $NAMESPACE apply -f $TEMP_FILE${NC}"
     fi
     kubectl --namespace $NAMESPACE apply -f $TEMP_FILE
+    local status=$?
 
-    if [ $? -eq 0 ]; then
+    if [ $status -eq 0 ]; then
         echo -e "${GREEN}[+] Success: The resource $TEMP_FILE has been successfully applied to the namespace $NAMESPACE.${NC}"
     else
         echo -e "${RED}[-] Error: Failed to apply the resource $TEMP_FILE to the namespace $NAMESPACE.${NC}"
     fi
 
     rm $TEMP_FILE
+    return $status
 }
 
 for arg in "$@"; do
@@ -102,8 +104,13 @@ else
     exit 1
 fi
 
+FAILED=0
 for FILE in "${FILES[@]}"; do
-    apply_yaml $FILE $2 # $2 can be --verbose
+    apply_yaml $FILE $2 || FAILED=1 # $2 can be --verbose
 done
 
+if [ "$FAILED" -ne 0 ]; then
+    echo -e "${RED}[-] Error: one or more resources failed to apply.${NC}"
+    exit 1
+fi
 echo -e "${BLUE}[*] Info: Process completed.${NC}"

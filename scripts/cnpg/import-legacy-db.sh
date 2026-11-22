@@ -54,7 +54,12 @@ for t in $tables; do
     echo "  $t | $a | $b$flag"
 done
 if [ "$mismatch" = "1" ]; then
+    # pg_restore has already committed: empty the target again so a retry
+    # starts clean and nothing half-verified is left behind.
     echo "Error: row counts differ. Were writes still reaching the source?" >&2
+    echo "Emptying the target's public schema; stop writes and re-run." >&2
+    dst q psql -c 'SET client_min_messages = warning' \
+        -c 'DROP SCHEMA public CASCADE' -c 'CREATE SCHEMA public'
     exit 1
 fi
 echo "Import complete."

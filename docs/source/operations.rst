@@ -143,11 +143,16 @@ Production Postgres is a CloudNativePG ``Cluster``
   Service. The API connects to ``<cluster>-rw``; during a failover it
   answers ``503`` with ``Retry-After`` (see `Database outages`_) and
   reconnects on its own once the new primary is up.
-* **Synchronous replication** (``method: any``, ``number: 1``): a commit is
-  acknowledged only once a replica has it too, so a failover loses no
-  acknowledged write. With ``dataDurability: preferred``, writes continue
-  asynchronously if no replica is healthy (availability over zero data loss
-  in that double failure).
+* **Synchronous replication** (``method: any``, ``number: 1``) with
+  ``failoverQuorum``: a commit is acknowledged only once a replica has it
+  too, and the operator promotes a replica only when it is sure to hold every
+  acknowledged commit, so a failover loses no acknowledged write. The cost:
+  if the primary **and** a replica fail together, the last replica is not
+  promoted automatically (it may lack commits only the lost replica had) and
+  the database stays down until an instance returns. As a last resort,
+  promote it by hand (``kubectl cnpg promote``), accepting that recent
+  commits may be lost. With ``dataDurability: preferred``, writes continue
+  asynchronously if no replica is healthy.
 * **Rolling updates** (minor image versions, parameters, resources) restart
   replicas first and then switch over, so the primary changes once.
 * Each instance has a data volume (``GAMIFICATIONENGINE_CNPG_STORAGE_SIZE``)
@@ -240,8 +245,10 @@ spec.
   ``LEGACY_DB_USER`` and ``LEGACY_DB_PASSWORD``. The source's major version
   must not be newer than the cluster's.
 * The target must have no tables. ``--replace`` drops its ``public`` schema
-  first, for example the empty schema the API's migrations created. On any
-  error nothing is committed, and the script fails if row counts differ.
+  first, for example the empty schema the API's migrations created. If the
+  restore fails nothing is committed; if row counts differ afterwards
+  (writes still reached the source), the script empties the target's
+  ``public`` schema again and fails, so stop writes and re-run.
 
 Database migrations (Alembic)
 =============================

@@ -27,13 +27,17 @@ spec:
 
   postgresql:
     # Every commit is confirmed by at least one replica before it is
-    # acknowledged, so a failover loses no acknowledged write. "preferred"
-    # keeps writes flowing (asynchronously) when no replica is healthy,
-    # favouring availability over zero data loss in that double failure.
+    # acknowledged. failoverQuorum promotes a replica only when it is sure to
+    # hold every acknowledged commit: if the primary and a replica fail
+    # together, the last replica is NOT promoted automatically (it may lack
+    # commits only the lost replica had); promote it by hand as a last
+    # resort. "preferred" keeps writes flowing (asynchronously) when no
+    # replica is healthy, favouring availability in that double failure.
     synchronous:
       method: any
       number: 1
       dataDurability: preferred
+      failoverQuorum: true
     parameters:
       shared_buffers: "512MB"
 
