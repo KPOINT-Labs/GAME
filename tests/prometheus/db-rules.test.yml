@@ -1,0 +1,118 @@
+# promtool unit tests for kubernetes/configmaps/db-prometheus-rules.yaml.
+# tests/unit_tests/test_db_alert_rules.py extracts the rules to db-rules.yml
+# next to this file and runs promtool in Docker:
+#   promtool test rules tests/prometheus/db-rules.test.yml
+rule_files:
+  - db-rules.yml
+evaluation_interval: 1m
+
+tests:
+  # Healthy: archiving every minute, a backup 2h old -> no alerts.
+  - interval: 1m
+    input_series:
+      - series: 'cnpg_pg_stat_archiver_last_failed_time{namespace="g",cluster="game-db",pod="game-db-1"}'
+        values: '-1x60'
+      - series: 'cnpg_pg_stat_archiver_last_archived_time{namespace="g",cluster="game-db",pod="game-db-1"}'
+        values: '100000+60x60'
+      - series: 'cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="g",cluster="game-db",pod="game-db-1"}'
+        values: '30x60'
+      - series: 'cnpg_pg_stat_archiver_archived_count{namespace="g",cluster="game-db",pod="game-db-1"}'
+        values: '10+1x60'
+      - series: 'cnpg_collector_pg_wal_archive_status{namespace="g",cluster="game-db",pod="game-db-1",value="ready"}'
+        values: '1x60'
+      - series: 'barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="g",cluster="game-db",pod="game-db-1"}'
+        values: '1800x60'
+      - series: 'barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp{namespace="g",cluster="game-db",pod="game-db-1"}'
+        values: '0x60'
+    alert_rule_test:
+      - {eval_time: 60m, alertname: CnpgWalArchivingFailing, exp_alerts: []}
+      - {eval_time: 60m, alertname: CnpgWalArchivingStalled, exp_alerts: []}
+      - {eval_time: 60m, alertname: CnpgWalArchiveBacklog, exp_alerts: []}
+      - {eval_time: 60m, alertname: CnpgBackupTooOld, exp_alerts: []}
+      - {eval_time: 60m, alertname: CnpgLastBackupFailed, exp_alerts: []}
+
+  # Archiving fails from minute 10, then stalls; a backlog builds up.
+  - interval: 1m
+    input_series:
+      - series: 'cnpg_pg_stat_archiver_last_failed_time{namespace="g",cluster="game-db",pod="game-db-1"}'
+        values: '-1x9 1000+60x50'
+      - series: 'cnpg_pg_stat_archiver_last_archived_time{namespace="g",cluster="game-db",pod="game-db-1"}'
+        values: '500x60'
+      - series: 'cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="g",cluster="game-db",pod="game-db-1"}'
+        values: '0+60x60'
+      - series: 'cnpg_pg_stat_archiver_archived_count{namespace="g",cluster="game-db",pod="game-db-1"}'
+        values: '42x60'
+      - series: 'cnpg_collector_pg_wal_archive_status{namespace="g",cluster="game-db",pod="game-db-1",value="ready"}'
+        values: '0+1x60'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: CnpgWalArchivingFailing
+        exp_alerts:
+          - exp_labels: {severity: critical, service: game, component: database, namespace: g, cluster: game-db}
+            exp_annotations:
+              summary: "WAL archiving is failing on game-db"
+              description: "The most recent attempt to archive a WAL segment of\ngame-db (g) failed, and\nno later attempt succeeded. Point-in-time recovery stops at\nthe last archived segment and WAL piles up on the primary's\nvolume. Check the primary's logs and the object store\n(bucket, IAM role, KMS key).\n"
+      - eval_time: 25m
+        alertname: CnpgWalArchivingStalled
+        exp_alerts:
+          - exp_labels: {severity: critical, service: game, component: database, namespace: g, cluster: game-db}
+            exp_annotations:
+              summary: "No WAL archived on game-db for 15 minutes"
+              description: "game-db (g) has not\narchived a WAL segment for\n25m 0s. CloudNativePG switches WAL\nat least every 5 minutes (archive_timeout), so archiving is\nstuck: point-in-time recovery would lose the recent\nchanges.\n"
+      - eval_time: 10m
+        alertname: CnpgWalArchiveBacklog
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: CnpgWalArchiveBacklog
+        exp_alerts:
+          - exp_labels: {severity: warning, service: game, component: database, namespace: g, cluster: game-db}
+            exp_annotations:
+              summary: "30 WAL segments waiting to be archived on game-db"
+              description: "WAL segments of game-db (g)\nare produced faster than they are archived. Recent changes\nare not yet recoverable from the backups, and the WAL volume\nfills up if this continues.\n"
+
+  # Backups: the last good one finished at t=0; 27.5h later none since,
+  # and an attempt at t=10m failed.
+  - interval: 1m
+    input_series:
+      - series: 'barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="g",cluster="game-db",pod="game-db-1"}'
+        values: '0x1700'
+      - series: 'barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp{namespace="g",cluster="game-db",pod="game-db-1"}'
+        values: '0x9 600x1690'
+    alert_rule_test:
+      - eval_time: 25h
+        alertname: CnpgBackupTooOld
+        exp_alerts: []
+      - eval_time: 1650m
+        alertname: CnpgBackupTooOld
+        exp_alerts:
+          - exp_labels: {severity: warning, service: game, component: database, namespace: g, cluster: game-db}
+            exp_annotations:
+              summary: "No successful backup of game-db for over 26 hours"
+              description: "The newest available base backup of game-db\n(g) is\n1d 3h 30m 0s old (daily backups expected).\nRestores need more WAL replay, and the recovery window\nshrinks as old backups expire. Check the ScheduledBackup and\nBackup resources.\n"
+      - eval_time: 5m
+        alertname: CnpgLastBackupFailed
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: CnpgLastBackupFailed
+        exp_alerts:
+          - exp_labels: {severity: warning, service: game, component: database, namespace: g, cluster: game-db}
+            exp_annotations:
+              summary: "The latest backup of game-db failed"
+              description: "The most recent base backup of game-db\n(g) failed after the last successful\none. Check: kubectl -n g get backups\n"
+
+  # Before backups are configured (archiving off, no plugin metrics):
+  # pg_stat_archiver reports -1 / 0 -> silent.
+  - interval: 1m
+    input_series:
+      - series: 'cnpg_pg_stat_archiver_last_failed_time{namespace="g",cluster="game-db",pod="game-db-1"}'
+        values: '-1x60'
+      - series: 'cnpg_pg_stat_archiver_last_archived_time{namespace="g",cluster="game-db",pod="game-db-1"}'
+        values: '-1x60'
+      - series: 'cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="g",cluster="game-db",pod="game-db-1"}'
+        values: '-1x60'
+      - series: 'cnpg_pg_stat_archiver_archived_count{namespace="g",cluster="game-db",pod="game-db-1"}'
+        values: '0x60'
+    alert_rule_test:
+      - {eval_time: 60m, alertname: CnpgWalArchivingFailing, exp_alerts: []}
+      - {eval_time: 60m, alertname: CnpgWalArchivingStalled, exp_alerts: []}
+      - {eval_time: 60m, alertname: CnpgBackupTooOld, exp_alerts: []}

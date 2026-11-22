@@ -33,6 +33,9 @@ show_help() {
     echo "  --aws       Apply the AWS pieces: encrypted gp3 StorageClass and the"
     echo "              database credentials from AWS Secrets Manager (External"
     echo "              Secrets Operator must be installed; see infra/aws/db)."
+    echo "  --cnpg-monitoring"
+    echo "              Apply the PodMonitor that scrapes the database instances"
+    echo "              (needs the Prometheus Operator)."
     echo "  --api       Apply only the API deployment and its dependencies."
     echo "  --verbose   Display verbose output."
     echo "  --help      Display this help message."
@@ -100,6 +103,10 @@ CNPG_FILES=(
     "kubernetes/cnpg/postgres-cluster.yaml"
 )
 
+CNPG_MONITORING_FILES=(
+    "kubernetes/cnpg/postgres-podmonitor.yaml"
+)
+
 AWS_FILES=(
     "kubernetes/aws/storageclass-gp3-encrypted.yaml"
     "kubernetes/aws/secrets-reader-serviceaccount.yaml"
@@ -127,6 +134,12 @@ elif [ "$1" = "--cnpg" ]; then
         exit 1
     fi
     FILES=("${CNPG_FILES[@]}")
+elif [ "$1" = "--cnpg-monitoring" ]; then
+    if ! kubectl get crd podmonitors.monitoring.coreos.com >/dev/null 2>&1; then
+        echo -e "${RED}[-] Error: the Prometheus Operator is not installed (no podmonitors.monitoring.coreos.com CRD). Use the scrape config in docs/source/observability.rst instead.${NC}"
+        exit 1
+    fi
+    FILES=("${CNPG_MONITORING_FILES[@]}")
 elif [ "$1" = "--aws" ]; then
     if [ "$DB_SECRETS_SOURCE" != "aws" ]; then
         echo -e "${RED}[-] Error: --aws needs GAMIFICATIONENGINE_DB_SECRETS_SOURCE=aws.${NC}"

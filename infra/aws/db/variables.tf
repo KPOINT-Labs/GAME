@@ -53,6 +53,12 @@ variable "cnpg_cluster_name" {
   default     = "game-db"
 }
 
+variable "cnpg_restore_cluster_names" {
+  description = "CloudNativePG clusters that restore from the backups (scripts/cnpg-restore.sh): they may assume the backup role to read the bucket. Add the name of a production restore target (e.g. game-db-2) before restoring into it."
+  type        = list(string)
+  default     = ["game-db-restore-test"]
+}
+
 # --- Database credentials ---------------------------------------------------
 
 variable "db_app_username" {

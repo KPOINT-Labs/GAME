@@ -1,0 +1,120 @@
+# Prometheus alert rules for the CloudNativePG database: WAL archiving and
+# backups. Needs the instances scraped with a "cluster" label (PodMonitor
+# kubernetes/cnpg/postgres-podmonitor.yaml, or the scrape config in
+# docs/source/observability.rst). Mount into the Prometheus rule_files path
+# alongside game-api-prometheus-rules.
+#
+# WAL archiving metrics come from CNPG's default queries (pg_stat_archiver,
+# primary only; cnpg_collector_pg_wal_archive_status). Backup metrics come
+# from the Barman Cloud plugin (barman_cloud_cloudnative_pg_io_*) and appear
+# once backups are configured; until then the backup alerts stay silent.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: game-db-prometheus-rules
+  labels:
+    app: game
+    component: database
+data:
+  db-rules.yml: |
+    groups:
+      - name: game-db-backups
+        interval: 60s
+        rules:
+          - alert: CnpgWalArchivingFailing
+            expr: |
+              max by (namespace, cluster) (cnpg_pg_stat_archiver_last_failed_time)
+              >
+              max by (namespace, cluster) (cnpg_pg_stat_archiver_last_archived_time)
+            for: 5m
+            labels:
+              severity: critical
+              service: game
+              component: database
+            annotations:
+              summary: >-
+                WAL archiving is failing on {{ $labels.cluster }}
+              description: |
+                The most recent attempt to archive a WAL segment of
+                {{ $labels.cluster }} ({{ $labels.namespace }}) failed, and
+                no later attempt succeeded. Point-in-time recovery stops at
+                the last archived segment and WAL piles up on the primary's
+                volume. Check the primary's logs and the object store
+                (bucket, IAM role, KMS key).
+
+          - alert: CnpgWalArchivingStalled
+            expr: |
+              max by (namespace, cluster) (cnpg_pg_stat_archiver_seconds_since_last_archival) > 900
+              and
+              max by (namespace, cluster) (cnpg_pg_stat_archiver_archived_count) > 0
+            for: 5m
+            labels:
+              severity: critical
+              service: game
+              component: database
+            annotations:
+              summary: >-
+                No WAL archived on {{ $labels.cluster }} for 15 minutes
+              description: |
+                {{ $labels.cluster }} ({{ $labels.namespace }}) has not
+                archived a WAL segment for
+                {{ $value | humanizeDuration }}. CloudNativePG switches WAL
+                at least every 5 minutes (archive_timeout), so archiving is
+                stuck: point-in-time recovery would lose the recent
+                changes.
+
+          - alert: CnpgWalArchiveBacklog
+            expr: |
+              max by (namespace, cluster) (cnpg_collector_pg_wal_archive_status{value="ready"}) > 10
+            for: 15m
+            labels:
+              severity: warning
+              service: game
+              component: database
+            annotations:
+              summary: >-
+                {{ $value }} WAL segments waiting to be archived on {{ $labels.cluster }}
+              description: |
+                WAL segments of {{ $labels.cluster }} ({{ $labels.namespace }})
+                are produced faster than they are archived. Recent changes
+                are not yet recoverable from the backups, and the WAL volume
+                fills up if this continues.
+
+          - alert: CnpgBackupTooOld
+            expr: |
+              time()
+              - max by (namespace, cluster) (barman_cloud_cloudnative_pg_io_last_available_backup_timestamp)
+              > 26 * 3600
+            for: 30m
+            labels:
+              severity: warning
+              service: game
+              component: database
+            annotations:
+              summary: >-
+                No successful backup of {{ $labels.cluster }} for over 26 hours
+              description: |
+                The newest available base backup of {{ $labels.cluster }}
+                ({{ $labels.namespace }}) is
+                {{ $value | humanizeDuration }} old (daily backups expected).
+                Restores need more WAL replay, and the recovery window
+                shrinks as old backups expire. Check the ScheduledBackup and
+                Backup resources.
+
+          - alert: CnpgLastBackupFailed
+            expr: |
+              max by (namespace, cluster) (barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp)
+              >
+              max by (namespace, cluster) (barman_cloud_cloudnative_pg_io_last_available_backup_timestamp)
+            for: 5m
+            labels:
+              severity: warning
+              service: game
+              component: database
+            annotations:
+              summary: >-
+                The latest backup of {{ $labels.cluster }} failed
+              description: |
+                The most recent base backup of {{ $labels.cluster }}
+                ({{ $labels.namespace }}) failed after the last successful
+                one. Check: kubectl -n {{ $labels.namespace }} get backups
