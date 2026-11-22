@@ -592,8 +592,15 @@ counters.
 * ``response_cache_oversize_total{namespace}``: results too large to cache
   (``RESPONSE_CACHE_MAX_ENTRY_BYTES``).
 
-To flush the whole cache by hand, give the epoch a new value:
-``redis-cli SET game:rc:v:epoch "$(date +%s%N)" EX 172800``.
+To flush the whole cache by hand, give the epoch a new value. The key is
+``<RESPONSE_CACHE_KEY_PREFIX>v:epoch``; with the API's environment loaded
+(for example in the API container), this uses the configured prefix and
+falls back to the default ``game:rc:``:
+
+.. code-block:: bash
+
+   redis-cli -u "$REDIS_URL" SET "${RESPONSE_CACHE_KEY_PREFIX:-game:rc:}v:epoch" \
+     "$(date +%s%N)" EX "${RESPONSE_CACHE_VERSION_TTL_SECONDS:-172800}"
 
 Scaling guidance
 ================
