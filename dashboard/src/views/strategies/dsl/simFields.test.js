@@ -4,7 +4,13 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { buildMockState, collectUsedFieldPaths, usedAccumulationFields } from './simFields'
+import {
+  ACCUMULATION_FIELD_META,
+  buildMockState,
+  collectUsedFieldPaths,
+  usedAccumulationFields,
+} from './simFields'
+import { FIELD_PATHS } from './whitelists'
 
 // A program that reads user.measurements_count (inside a compare) and
 // task.measurements_count (inside an arithmetic node), plus a data.* and
@@ -149,5 +155,13 @@ describe('buildMockState', () => {
       2,
     )
     expect(mock).toEqual({ 'task.measurements_count': 8 })
+  })
+})
+
+describe('user.streak_days', () => {
+  it('is a whitelisted field with a simulation input that does not grow per submission', () => {
+    expect(FIELD_PATHS).toContain('user.streak_days')
+    const meta = ACCUMULATION_FIELD_META.find((m) => m.path === 'user.streak_days')
+    expect(meta).toMatchObject({ default: 1, step: 0 })
   })
 })

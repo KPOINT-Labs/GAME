@@ -288,6 +288,36 @@ class UserPointsRepository(BaseRepository):
         )
         return row
 
+    async def get_streak_scope(self, externalGameId, externalUserId):
+        """
+        Internal ids and timezone needed to count a user's streak in a game.
+
+        Args:
+            externalGameId: External identifier of the game.
+            externalUserId: External identifier of the user.
+
+        Returns:
+            tuple | None: ``(game_id, timezone, user_id)``; ``user_id`` is
+            ``None`` when the user does not exist yet. ``None`` when the game
+            does not exist.
+        """
+        async with self.session_factory() as session:
+            game = (
+                await session.execute(
+                    select(Games.id, Games.timezone).filter(
+                        Games.externalGameId == externalGameId
+                    )
+                )
+            ).first()
+            if game is None:
+                return None
+            user_id = (
+                await session.execute(
+                    select(Users.id).filter(Users.externalUserId == externalUserId)
+                )
+            ).scalar_one_or_none()
+            return game.id, game.timezone, user_id
+
     async def get_active_days_of_user_in_game(
         self, gameId, userId, tz_name: str, start, end
     ):

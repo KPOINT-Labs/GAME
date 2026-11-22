@@ -20,6 +20,8 @@ export const FIELD_PATHS = [
   'user.new_last_window_diff',
   // Rolling-window count for constantEffort-style strategies.
   'user.recent_measurements_count',
+  // Consecutive active days in the game (any task), counting today.
+  'user.streak_days',
 ]
 
 // Paths that read the parent built-in's result in DSL_EXTEND

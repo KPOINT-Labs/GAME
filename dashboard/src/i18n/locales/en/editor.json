@@ -137,7 +137,8 @@
       "user.avg_time": "User's average time between tasks (s)",
       "all.avg_time": "Average time across all users (s)",
       "user.last_window_diff": "Time diff vs. last window (s)",
-      "user.new_last_window_diff": "New time diff vs. last window (s)"
+      "user.new_last_window_diff": "New time diff vs. last window (s)",
+      "user.streak_days": "User's streak of consecutive active days (incl. today)"
     },
     "advanced": "Advanced: edit raw JSON overrides",
     "mockState": "Simulated field values (JSON)",

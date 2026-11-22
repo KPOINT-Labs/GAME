@@ -1,7 +1,7 @@
 """Streaks of consecutive active days.
 
-Shared by GREENCROWD scoring (``DIM_S``) and the activity endpoint so both
-count days the same way. They can still see different awards: GREENCROWD
+Shared by GREENCROWD scoring (``DIM_S``), the activity endpoint and the DSL
+``user.streak_days`` field so all of them count days the same way. They can still see different awards: GREENCROWD
 only its own tasks, the activity endpoint all of a game's tasks. Dates are
 the game's local days (see ``app.util.timezones``).
 """
@@ -9,9 +9,17 @@ the game's local days (see ``app.util.timezones``).
 from __future__ import annotations
 
 import datetime
-from typing import Iterable
+from typing import Awaitable, Callable, Iterable
 
 ONE_DAY = datetime.timedelta(days=1)
+# The current streak is looked up backwards in growing windows; this many
+# days first, doubling while the streak reaches the window's edge.
+CURRENT_STREAK_FIRST_WINDOW_DAYS = 64
+CURRENT_STREAK_MAX_DAYS = 365 * 20
+
+ActiveDaysLoader = Callable[
+    [datetime.date, datetime.date], Awaitable[Iterable[datetime.date]]
+]
 
 
 def count_consecutive_active_days(
@@ -67,3 +75,46 @@ def streak_runs(
         else:
             runs.append((day, day, 1))
     return runs
+
+
+async def current_streak(
+    load_active_days: ActiveDaysLoader,
+    today: datetime.date,
+    *,
+    include_today: bool = False,
+) -> int:
+    """
+    The user's current streak as of ``today``, over all history.
+
+    Reads only as far back as the streak goes, in non-overlapping chunks of
+    days: the most recent 64 days, then the 128 before them, then 256, and so
+    on, stopping at the first chunk that contains a gap. No day is read twice.
+
+    Args:
+        load_active_days: Async callable ``(first_day, last_day)`` returning
+            the active local days in that inclusive range.
+        today (datetime.date): The reference day, in the game's timezone.
+        include_today (bool): Treat ``today`` as active even if nothing is
+            recorded yet. Scoring uses this: the award being scored makes
+            today active, so the streak it rewards always includes today and
+            does not change between the first and later awards of a day.
+
+    Returns:
+        int: Consecutive active days ending today (or yesterday, when
+        ``include_today`` is false and today has no activity yet).
+    """
+    active: set = {today} if include_today else set()
+    chunk = CURRENT_STREAK_FIRST_WINDOW_DAYS
+    last_day = today
+    while True:
+        first_day = last_day - datetime.timedelta(days=chunk - 1)
+        active.update(await load_active_days(first_day, last_day))
+        streak = count_consecutive_active_days(active, today)
+        last_counted = today if today in active else today - ONE_DAY
+        oldest_counted = last_counted - datetime.timedelta(days=streak - 1)
+        if streak == 0 or oldest_counted > first_day:
+            return streak
+        if (today - first_day).days + 1 >= CURRENT_STREAK_MAX_DAYS:
+            return streak
+        last_day = first_day - ONE_DAY
+        chunk *= 2

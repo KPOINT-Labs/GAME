@@ -20,25 +20,12 @@ from app.schema.user_points_schema import (
 )
 from app.services.game_access import get_authorized_game
 from app.services.user_points._base import UserPointsContext
-from app.util.streaks import ONE_DAY, count_consecutive_active_days, streak_runs
-from app.util.timezones import zone_of
+from app.util.streaks import current_streak, streak_runs
+from app.util.timezones import utc_bounds_of_local_days, zone_of
 
 DEFAULT_ACTIVITY_DAYS = 30
 # Upper bound on from..to; keeps the period query and the response small.
 MAX_ACTIVITY_DAYS = 45
-# The current streak is looked up backwards in growing windows; this many
-# days first, doubling while the streak reaches the window's edge.
-CURRENT_STREAK_FIRST_WINDOW_DAYS = 64
-CURRENT_STREAK_MAX_DAYS = 365 * 20
-
-
-def _utc_bounds(zone, first_day, last_day):
-    """UTC instants covering the game's local days ``first_day..last_day``."""
-    start = datetime.datetime.combine(first_day, datetime.time.min, tzinfo=zone)
-    end = datetime.datetime.combine(last_day + ONE_DAY, datetime.time.min, tzinfo=zone)
-    return start.astimezone(datetime.timezone.utc), end.astimezone(
-        datetime.timezone.utc
-    )
 
 
 class PointsActivityMixin(UserPointsContext):
@@ -48,38 +35,19 @@ class PointsActivityMixin(UserPointsContext):
         local days ``first_day..last_day``. The repository groups by day (in
         SQL on PostgreSQL), so this is at most one entry per day.
         """
-        start, end = _utc_bounds(zone, first_day, last_day)
+        start, end = utc_bounds_of_local_days(zone, first_day, last_day)
         rows = await self.user_points_repository.get_active_days_of_user_in_game(
             game_id, user_id, zone.key, start, end
         )
         return {day: (points, awards) for day, points, awards in rows}
 
     async def _current_streak(self, game_id, user_id, zone, today):
-        """
-        The user's current streak as of ``today``, over all history.
+        """The user's current streak as of ``today``, over all history."""
 
-        Reads only as far back as the streak goes, in non-overlapping chunks
-        of days: the most recent 64 days, then the 128 before them, then 256,
-        and so on, stopping at the first chunk that contains a gap. No day is
-        read twice, and each chunk is at most one row per day.
-        """
-        active: set = set()
-        chunk = CURRENT_STREAK_FIRST_WINDOW_DAYS
-        last_day = today
-        while True:
-            first_day = last_day - datetime.timedelta(days=chunk - 1)
-            active.update(
-                await self._active_days(game_id, user_id, zone, first_day, last_day)
-            )
-            streak = count_consecutive_active_days(active, today)
-            last_counted = today if today in active else today - ONE_DAY
-            oldest_counted = last_counted - datetime.timedelta(days=streak - 1)
-            if streak == 0 or oldest_counted > first_day:
-                return streak
-            if (today - first_day).days + 1 >= CURRENT_STREAK_MAX_DAYS:
-                return streak
-            last_day = first_day - ONE_DAY
-            chunk *= 2
+        async def load(first_day, last_day):
+            return await self._active_days(game_id, user_id, zone, first_day, last_day)
+
+        return await current_streak(load, today)
 
     async def get_user_activity(
         self,

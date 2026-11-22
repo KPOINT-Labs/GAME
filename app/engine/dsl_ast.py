@@ -279,6 +279,13 @@ FIELD_RESOLVERS: Dict[str, FieldResolution] = dict(
             "get_last_window_time_diff",
             lambda ctx: (ctx.externalTaskId, ctx.externalUserId),
         ),
+        # Consecutive active days in the game (any task, game timezone),
+        # counting today. Same day rule as the activity endpoint.
+        _analytics(
+            "user.streak_days",
+            "get_user_streak_days_including_today",
+            lambda ctx: (ctx.externalGameId, ctx.externalUserId),
+        ),
         _analytics(
             "user.new_last_window_diff",
             "get_new_last_window_time_diff",

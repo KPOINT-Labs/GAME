@@ -18,6 +18,7 @@ no way to read arbitrary attributes.
 | `all.avg_time`                    | Average time between measurements across all users (this task).|
 | `user.last_window_diff`           | Time-window diff between the last two measurements (this user).|
 | `user.new_last_window_diff`       | Same, including the in-flight measurement.                     |
+| `user.streak_days`                | Consecutive days with at least one award in this **game** (any task, game timezone), counting today. Always at least 1. |
 
 ## AST
 
@@ -30,6 +31,10 @@ no way to read arbitrary attributes.
 * Field values are precomputed in a single batch before your AST runs.
   This means using the same field 10 times costs the same as using it
   once - no N+1.
+* `user.streak_days` counts today even before the award being scored is
+  saved, so every award on the same day sees the same value. Pair it
+  with an `Idempotency-Key` such as `streak:<user>:<local date>` on a
+  dedicated task to pay a streak bonus once per day.
 * `data.<key>` reads come from `gd_field_data` instead.
 * Paths starting with `parent.` (e.g. `parent.points`,
   `parent.case_name`) are only valid in `post_rules` - see

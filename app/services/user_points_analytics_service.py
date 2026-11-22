@@ -10,10 +10,13 @@ queries; they are consumed primarily by strategy engines (``app/engine``) to
 compute rewards based on historical user behaviour.
 """
 
+import datetime
 from typing import Any
 
 from app.repository.user_points_repository import UserPointsRepository
 from app.services.base_service import BaseService
+from app.util.streaks import current_streak
+from app.util.timezones import utc_bounds_of_local_days, zone_of
 
 
 class UserPointsAnalyticsService(BaseService):
@@ -114,3 +117,41 @@ class UserPointsAnalyticsService(BaseService):
         return await self.user_points_repository.get_personal_avg_by_external_game_id(
             external_game_id, externalUserId
         )
+
+    async def get_user_streak_days_including_today(
+        self, externalGameId, externalUserId
+    ) -> int:
+        """
+        The user's streak of consecutive active days in a game, counting today.
+
+        Backs the DSL ``user.streak_days`` field. A day is active when the
+        user has at least one award on any of the game's tasks, in the game's
+        timezone (the same rule as the activity endpoint). Today always counts
+        because the award being scored makes it active, so the value is at
+        least 1 and is the same for every award of the day.
+
+        Args:
+            externalGameId: External identifier of the game.
+            externalUserId: External identifier of the user.
+
+        Returns:
+            int: Consecutive active days ending today, today included; 1 for
+            a user with no earlier activity (or an unknown game/user).
+        """
+        scope = await self.user_points_repository.get_streak_scope(
+            externalGameId, externalUserId
+        )
+        if scope is None or scope[2] is None:
+            return 1
+        game_id, tz_name, user_id = scope
+        zone = zone_of(tz_name)
+        today = datetime.datetime.now(zone).date()
+
+        async def load(first_day, last_day):
+            start, end = utc_bounds_of_local_days(zone, first_day, last_day)
+            rows = await self.user_points_repository.get_active_days_of_user_in_game(
+                game_id, user_id, zone.key, start, end
+            )
+            return [day for day, _points, _awards in rows]
+
+        return await current_streak(load, today, include_today=True)

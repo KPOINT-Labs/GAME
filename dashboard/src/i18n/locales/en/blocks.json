@@ -99,6 +99,10 @@
       "label": "Recent measurements",
       "desc": "User's submissions in the last 5 minutes (rolling window)."
     },
+    "user.streak_days": {
+      "label": "Streak days",
+      "desc": "Consecutive days the user earned points in this game (any task, game timezone), counting today. At least 1."
+    },
     "parent.points": {
       "label": "Parent points",
       "desc": "Points computed by the parent strategy (POST rules only)."
