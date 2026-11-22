@@ -41,27 +41,38 @@ async def _seed_task(db_session, game_id, external_task_id="t-1"):
 
 
 @pytest.mark.asyncio
-async def test_read_by_game_id_returns_tasks(repository, db_session):
-    """
-    ``read_by_gameId`` delegates filtering to the generic
-    ``dict_to_sqlalchemy_filter_options`` builder, which currently does not
-    convert UUID-typed fields into SQL filters. This test verifies the result
-    shape (items + search options) without asserting per-gameId filtering.
-    """
+async def test_read_by_game_id_returns_only_that_games_tasks(repository, db_session):
+    """``read_by_gameId`` filters by the UUID ``gameId``."""
     game_a = await _seed_game(db_session, "game-a")
+    game_b = await _seed_game(db_session, "game-b")
     await _seed_task(db_session, game_a.id, "t-a1")
     await _seed_task(db_session, game_a.id, "t-a2")
+    await _seed_task(db_session, game_b.id, "t-b1")
 
-    schema = FindTask(
-        gameId=game_a.id,
-        ordering="externalTaskId",
-        page=1,
-        page_size=10,
-    )
-    result = await repository.read_by_gameId(schema)
+    for game, expected in ((game_a, {"t-a1", "t-a2"}), (game_b, {"t-b1"})):
+        schema = FindTask(
+            gameId=game.id,
+            ordering="externalTaskId",
+            page=1,
+            page_size=10,
+        )
+        result = await repository.read_by_gameId(schema)
 
-    assert {t.externalTaskId for t in result["items"]} == {"t-a1", "t-a2"}
-    assert result["search_options"]["total_count"] == 2
+        assert {t.externalTaskId for t in result["items"]} == expected
+        assert {str(t.gameId) for t in result["items"]} == {str(game.id)}
+        assert result["search_options"]["total_count"] == len(expected)
+
+
+@pytest.mark.asyncio
+async def test_read_by_game_id_of_game_without_tasks_is_empty(repository, db_session):
+    other = await _seed_game(db_session, "game-other")
+    await _seed_task(db_session, other.id, "t-other")
+    empty = await _seed_game(db_session, "game-empty")
+
+    result = await repository.read_by_gameId(FindTask(gameId=empty.id))
+
+    assert result["items"] == []
+    assert result["search_options"]["total_count"] == 0
 
 
 @pytest.mark.asyncio
