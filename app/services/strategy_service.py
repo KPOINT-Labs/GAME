@@ -132,6 +132,37 @@ class StrategyService(BaseService):
                 return strategy
         raise NotFoundError(detail=f"Strategy not found with id: {id}")
 
+    def describe_strategy(self, strategy_id: str) -> dict[str, Any]:
+        """
+        The strategy shown on a task or game, for a built-in or custom id.
+
+        Built-ins come from the registry (``NotFoundError`` if unknown).
+        A ``custom:<uuid>`` id is described from the id alone: it has no
+        strategy variables, and its name, description and version are read
+        from the tenant-scoped ``/strategies/custom/{id}`` endpoint. Keeping
+        this lookup-free makes task and game reads independent of the
+        caller's tenant (they are cached per game) and of whether the
+        definition still exists.
+
+        Args:
+            strategy_id (str): A built-in id or a ``custom:<uuid>`` id.
+
+        Returns:
+            dict: ``id``, ``name``, ``description``, ``version``,
+            ``variables`` and ``hash_version``; a fresh dict each call, so
+            callers may apply param overrides to ``variables``.
+        """
+        if is_custom_strategy_id(strategy_id):
+            return {
+                "id": strategy_id,
+                "name": None,
+                "description": None,
+                "version": "",
+                "variables": {},
+                "hash_version": None,
+            }
+        return self.get_strategy_by_id(strategy_id)
+
     def get_Class_by_id(self, id) -> Any:
         """
         Retrieves the instance of a built-in strategy by its ID.

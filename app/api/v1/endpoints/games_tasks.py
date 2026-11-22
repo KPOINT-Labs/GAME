@@ -125,7 +125,7 @@ Creates a new task linked to an existing game.
 
 ### Request Body
 - `externalTaskId` (`string`, required): External task identifier from the client domain.
-- `strategyId` (`string`, optional): Strategy override for this task. If omitted, inheritance rules apply.
+- `strategyId` (`string`, optional): Strategy override for this task: a built-in id (e.g. `default`) or `custom:<uuid>` for a PUBLISHED custom strategy in the caller's tenant. If omitted, inheritance rules apply.
 - `params` (`array`, optional): Task-level key/value parameters used during scoring.
 
 ### Success (200)

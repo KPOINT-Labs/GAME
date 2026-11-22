@@ -179,3 +179,43 @@ class TestStrategyServiceCompatLayer(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDescribeStrategy(unittest.TestCase):
+    def test_builtin_comes_from_the_registry(self):
+        service = StrategyService()
+        expected = {"id": "default", "name": "Default", "variables": {"k": 1}}
+        service.get_strategy_by_id = MagicMock(return_value=expected)
+
+        self.assertIs(service.describe_strategy("default"), expected)
+        service.get_strategy_by_id.assert_called_once_with("default")
+
+    def test_unknown_builtin_raises_not_found(self):
+        service = StrategyService()
+        service.list_all_strategies = MagicMock(return_value=[{"id": "default"}])
+
+        with self.assertRaises(NotFoundError):
+            service.describe_strategy("missing")
+
+    def test_custom_is_described_from_its_id_without_a_lookup(self):
+        definition_service = MagicMock()
+        definition_service.get_strategy = AsyncMock()
+        service = StrategyService(strategy_definition_service=definition_service)
+        strategy_id = f"{CUSTOM_STRATEGY_PREFIX}abc"
+
+        described = service.describe_strategy(strategy_id)
+
+        self.assertEqual(
+            described,
+            {
+                "id": strategy_id,
+                "name": None,
+                "description": None,
+                "version": "",
+                "variables": {},
+                "hash_version": None,
+            },
+        )
+        definition_service.get_strategy.assert_not_called()
+        # A fresh dict each call: callers mutate ``variables``.
+        self.assertIsNot(service.describe_strategy(strategy_id), described)

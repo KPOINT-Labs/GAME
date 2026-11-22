@@ -715,7 +715,7 @@ class GameService(BaseService):
                 detail=f"Game with gameId: {gameId} does not have a strategyId"
             )
 
-        strategy = self.strategy_service.get_strategy_by_id(game.strategyId)
+        strategy = self.strategy_service.describe_strategy(game.strategyId)
         game_params = await self.game_params_repository.read_by_column(
             "gameId", game.id, not_found_raise_exception=False, only_one=False
         )

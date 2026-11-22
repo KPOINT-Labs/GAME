@@ -490,7 +490,7 @@ class TestGameService(unittest.IsolatedAsyncioTestCase):
                 "keep_int": 7,
             },
         }
-        self.strategy_service.get_strategy_by_id.return_value = strategy_payload
+        self.strategy_service.describe_strategy.return_value = strategy_payload
         game_params = [
             SimpleNamespace(key="int_var", value="10"),
             SimpleNamespace(key="float_var", value="3.5"),
@@ -513,13 +513,27 @@ class TestGameService(unittest.IsolatedAsyncioTestCase):
         game = self._build_game(game_id, strategy_id="default")
         self.game_repository.read_by_id.return_value = game
         strategy_payload = {"id": "default", "variables": {"k": 1}}
-        self.strategy_service.get_strategy_by_id.return_value = strategy_payload
+        self.strategy_service.describe_strategy.return_value = strategy_payload
         self.game_params_repository.read_by_column.return_value = []
 
         result = await self.service.get_strategy_by_gameId(game_id)
 
         self.assertEqual(result["variables"]["k"], 1)
         self.assertEqual(result["game_params"], [])
+
+    async def test_get_strategy_by_game_id_describes_a_custom_strategy(self):
+        game_id = uuid4()
+        game = self._build_game(game_id, strategy_id="custom:abc")
+        self.game_repository.read_by_id.return_value = game
+        self.strategy_service.describe_strategy.side_effect = (
+            StrategyService().describe_strategy
+        )
+        self.game_params_repository.read_by_column.return_value = []
+
+        result = await self.service.get_strategy_by_gameId(game_id)
+
+        self.assertEqual(result["id"], "custom:abc")
+        self.assertEqual(result["variables"], {})
 
     async def test_get_tasks_by_game_id_raises_when_game_missing(self):
         self.game_repository.read_by_id.return_value = None
