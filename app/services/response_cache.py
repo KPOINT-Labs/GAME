@@ -25,18 +25,28 @@ workers could not invalidate it. Version changes that could not be written
 while Redis was down are compensated by changing the global ``epoch`` on
 the next successful Redis call, which drops every cached entry.
 
+Some reads are deliberately *not* invalidated by every write that changes
+them: leaderboards depend only on the game's definition version, so point
+awards do not refresh them and they can be up to their TTL old.
+
+Concurrent misses for the same key in one worker share a single
+computation (:meth:`RedisResponseCache.coalesce`), so a popular entry that
+expires costs one query per worker, not one per request.
+
 Disabled (``RESPONSE_CACHE_ENABLED=false``, the default) the services get a
 :class:`NullResponseCache` and behave exactly as without caching.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
 import secrets
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from functools import lru_cache
 from time import time_ns
 from types import SimpleNamespace
 from typing import (
@@ -58,7 +68,7 @@ from uuid import UUID
 
 from fastapi.encoders import jsonable_encoder
 from prometheus_client import Counter
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 
 from app.core.exceptions import ForbiddenError
 from app.services.game_access import GAME_FORBIDDEN_DETAIL, can_access_game
@@ -79,6 +89,14 @@ response_cache_oversize_total = Counter(
     labelnames=("namespace",),
 )
 
+response_cache_coalesced_total = Counter(
+    "response_cache_coalesced_total",
+    "Cache misses answered without querying the database: they waited for a "
+    "computation already running in the worker, or found the entry stored "
+    "by one that had just finished.",
+    labelnames=("namespace",),
+)
+
 response_cache_invalidations_total = Counter(
     "response_cache_invalidations_total",
     "Entity versions changed by writes, by entity type.",
@@ -94,6 +112,10 @@ response_cache_lost_invalidations_total = Counter(
 # TTL groups; values come from RESPONSE_CACHE_*_TTL_SECONDS.
 TTL_GAME_DEFINITION = "game_definition"
 TTL_GAMES_LIST = "games_list"
+# Not invalidated by point awards: served up to this old.
+TTL_LEADERBOARD = "leaderboard"
+# One user's points in a game; invalidated by that user's awards and actions.
+TTL_USER_POINTS = "user_points"
 
 # --- Entities ---------------------------------------------------------------
 # An entity is a string naming something whose version cached results embed.
@@ -120,6 +142,19 @@ def game_definition_entity(game_id: Any) -> str:
     return f"game:{_normalize_id(game_id)}:def"
 
 
+def user_entity(external_user_id: Any) -> str:
+    """
+    Entity for one user's activity: their point awards and posted actions.
+
+    Args:
+        external_user_id: The user's external id.
+
+    Returns:
+        str: ``user:<externalUserId>:activity``.
+    """
+    return f"user:{external_user_id}:activity"
+
+
 def _normalize_id(value: Any) -> str:
     """Canonical string form of an id, so UUID and str callers agree."""
     try:
@@ -129,10 +164,14 @@ def _normalize_id(value: Any) -> str:
 
 
 def _entity_type(entity: str) -> str:
-    """Low-cardinality metric label for an entity (``game:<id>:def`` -> ``game:def``)."""
+    """
+    Low-cardinality metric label for an entity: ``game:<id>:def`` ->
+    ``game:def``. Ids may contain ``:`` (external user ids), so only the
+    first and last parts are kept.
+    """
     parts = entity.split(":")
-    if len(parts) == 3:
-        return f"{parts[0]}:{parts[2]}"
+    if len(parts) >= 3:
+        return f"{parts[0]}:{parts[-1]}"
     return entity
 
 
@@ -194,6 +233,12 @@ class ResponseCache(Protocol):
         """Async context manager that invalidates ``entities`` on exit."""
         ...
 
+    async def coalesce(
+        self, lookup: CacheLookup, produce: Callable[[], Awaitable[Any]]
+    ) -> Any:
+        """Run ``produce`` once for concurrent misses on the same key."""
+        ...
+
 
 class _InvalidatingMixin:
     """``invalidating()`` on top of ``invalidate()``."""
@@ -238,6 +283,12 @@ class NullResponseCache(_InvalidatingMixin):
     async def invalidate(self, *entities: str) -> None:
         """No-op."""
 
+    async def coalesce(
+        self, lookup: CacheLookup, produce: Callable[[], Awaitable[Any]]
+    ) -> Any:
+        """Nothing is shared without a cache."""
+        return await produce()
+
 
 class RedisResponseCache(_InvalidatingMixin):
     """
@@ -275,6 +326,8 @@ class RedisResponseCache(_InvalidatingMixin):
         # successful Redis call changes the epoch to drop possibly stale
         # entries.
         self._lost_invalidation = False
+        # Computations in progress in this worker, by entry key.
+        self._inflight: dict = {}
 
     def ttl(self, group: str) -> int:
         """TTL in seconds for a TTL group; 0 (do not store) if unknown."""
@@ -436,6 +489,66 @@ class RedisResponseCache(_InvalidatingMixin):
             response_cache_invalidations_total.labels(entity=_entity_type(entity)).inc()
         self._circuit.record_success()
 
+    async def coalesce(
+        self, lookup: CacheLookup, produce: Callable[[], Awaitable[Any]]
+    ) -> Any:
+        """
+        Run ``produce`` once for concurrent misses on the same entry.
+
+        The first miss starts the computation; misses arriving while it runs
+        await the same result, or exception. Before computing, the entry is
+        read again: a miss that arrives just after another request stored
+        the entry (callers do their access check between lookup and here)
+        uses it instead of querying again. The computation is shielded, so a
+        client disconnecting does not cancel it for the others. Bypassed
+        lookups are not shared.
+
+        Args:
+            lookup (CacheLookup): The miss.
+            produce: Computes, stores and returns the value to cache.
+
+        Returns:
+            Any: The cached value: from the shared computation, or as just
+            stored by another request.
+        """
+        if lookup.key is None:
+            return await produce()
+        task = self._inflight.get(lookup.key)
+        if task is None:
+            task = asyncio.ensure_future(self._recheck_or_produce(lookup, produce))
+            self._inflight[lookup.key] = task
+            task.add_done_callback(self._make_done_callback(lookup.key))
+        else:
+            response_cache_coalesced_total.labels(namespace=lookup.namespace).inc()
+        return await asyncio.shield(task)
+
+    async def _recheck_or_produce(
+        self, lookup: CacheLookup, produce: Callable[[], Awaitable[Any]]
+    ) -> Any:
+        """The entry if it was stored since the lookup, else ``produce()``."""
+        if self._circuit.allow():
+            try:
+                raw = await self._client.get(lookup.key)
+            except REDIS_UNAVAILABLE_ERRORS as exc:
+                self._failed(exc)
+            else:
+                if raw is not None:
+                    response_cache_coalesced_total.labels(
+                        namespace=lookup.namespace
+                    ).inc()
+                    return json.loads(raw)
+        return await produce()
+
+    def _make_done_callback(self, key: str) -> Callable[[Any], None]:
+        def done(task: Any) -> None:
+            if self._inflight.get(key) is task:
+                del self._inflight[key]
+            # Mark the exception retrieved: every waiter may have gone.
+            if not task.cancelled():
+                task.exception()
+
+        return done
+
     def _lose(self) -> None:
         self._lost_invalidation = True
         response_cache_lost_invalidations_total.inc()
@@ -490,8 +603,21 @@ M = TypeVar("M", bound=BaseModel)
 Params = Optional[Mapping[str, Any]]
 
 
-def _decode(body: Any, model: Optional[Type[M]]) -> Any:
-    return model.model_validate(body) if model is not None else body
+def _decode(body: Any, model: Any) -> Any:
+    """
+    Rebuild the result type from cached JSON: a pydantic model, or any type
+    pydantic can validate (e.g. ``List[SomeModel]``). ``None`` keeps JSON.
+    """
+    if model is None:
+        return body
+    if isinstance(model, type) and issubclass(model, BaseModel):
+        return model.model_validate(body)
+    return _type_adapter(model).validate_python(body)
+
+
+@lru_cache(maxsize=None)
+def _type_adapter(model: Any) -> TypeAdapter:
+    return TypeAdapter(model)
 
 
 def _resolve_params(params: Union[Params, Callable[[], Params]]) -> Params:
@@ -551,6 +677,7 @@ async def cached_game_read(
     params: Union[Params, Callable[[], Params]] = None,
     ttl_group: str = TTL_GAME_DEFINITION,
     model: Optional[Type[M]] = None,
+    extra_versions: Sequence[str] = (),
 ) -> Any:
     """
     Cached read of data that depends on one game's definition.
@@ -562,13 +689,16 @@ async def cached_game_read(
     same access check without touching the database. A hit implies the game
     exists: deleting a game changes its definition version.
 
-    One entry is shared by every caller allowed to see the game.
+    One entry is shared by every caller allowed to see the game, and
+    concurrent misses share one ``compute`` (each still runs ``load_game``).
+    ``extra_versions`` adds entities beyond the game's definition that the
+    result depends on (e.g. a user's activity).
     """
     if not cache.enabled:
         return await compute(await load_game())
     lookup = await cache.lookup(
         namespace,
-        [GAMES_ALL, game_definition_entity(game_id)],
+        [GAMES_ALL, game_definition_entity(game_id), *extra_versions],
         _resolve_params(params),
     )
     if lookup.hit:
@@ -581,14 +711,19 @@ async def cached_game_read(
         ):
             raise ForbiddenError(detail=GAME_FORBIDDEN_DETAIL)
         return _decode(lookup.value["body"], model)
+    # Every caller passes its own access check before sharing a computation.
     game = await load_game()
-    body = jsonable_encoder(await compute(game))
-    entry = {
-        "owner": {
-            "apiKey_used": getattr(game, "apiKey_used", None),
-            "oauth_user_id": getattr(game, "oauth_user_id", None),
-        },
-        "body": body,
-    }
-    await cache.store(lookup, entry, cache.ttl(ttl_group))
-    return _decode(body, model)
+
+    async def produce() -> Any:
+        entry = {
+            "owner": {
+                "apiKey_used": getattr(game, "apiKey_used", None),
+                "oauth_user_id": getattr(game, "oauth_user_id", None),
+            },
+            "body": jsonable_encoder(await compute(game)),
+        }
+        await cache.store(lookup, entry, cache.ttl(ttl_group))
+        return entry
+
+    entry = await cache.coalesce(lookup, produce)
+    return _decode(entry["body"], model)

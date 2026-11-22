@@ -317,6 +317,14 @@ cache"). Off by default.
    * - ``RESPONSE_CACHE_GAMES_LIST_TTL_SECONDS``
      - ``86400``
      - ``GET /games``.
+   * - ``RESPONSE_CACHE_LEADERBOARD_TTL_SECONDS``
+     - ``21600``
+     - Game and task leaderboards. Point awards do **not** refresh them, so
+       this is how stale a leaderboard may be.
+   * - ``RESPONSE_CACHE_USER_POINTS_TTL_SECONDS``
+     - ``21600``
+     - ``GET /games/{gameId}/users/{externalUserId}/points``. Every award or
+       action posted for the user refreshes it, so this is only a safety net.
 
 DSL engine limits
 =================

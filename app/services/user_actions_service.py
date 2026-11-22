@@ -15,6 +15,7 @@ from app.schema.user_actions_schema import (
 )
 from app.services.base_service import BaseService
 from app.services.game_access import get_authorized_game
+from app.services.response_cache import NullResponseCache, ResponseCache, user_entity
 
 
 class UserActionsService(BaseService):
@@ -40,6 +41,7 @@ class UserActionsService(BaseService):
         game_repository: GameRepository,
         task_repository: TaskRepository,
         cohort_repository: CohortRepository | None = None,
+        response_cache: ResponseCache | None = None,
     ) -> None:
         """
         Initializes the UserPointsService with the provided repositories and
@@ -53,12 +55,15 @@ class UserActionsService(BaseService):
             cohort_repository: Stores the user's cohorts per game. Optional
               so positional test setups keep working; the DI container always
               injects it.
+            response_cache: Invalidated for the user on every posted
+              action; omitted, nothing is cached.
         """
         self.user_actions_repository = user_actions_repository
         self.users_repository = users_repository
         self.game_repository = game_repository
         self.task_repository = task_repository
         self.cohort_repository = cohort_repository
+        self.response_cache = response_cache or NullResponseCache()
         super().__init__(user_actions_repository)
 
     async def user_add_action_in_task(
@@ -137,6 +142,7 @@ class UserActionsService(BaseService):
                 await session.commit()
         else:
             created_action = await self.user_actions_repository.create(new_action)
+        await self.response_cache.invalidate(user_entity(action.externalUserId))
         response = ResponseAddActionDidByUserInTask(
             **created_action.model_dump(),
             externalUserId=str(action.externalUserId),
@@ -179,6 +185,7 @@ class UserActionsService(BaseService):
         )
 
         created_action = await self.user_actions_repository.create(new_action)
+        await self.response_cache.invalidate(user_entity(externalUserId))
 
         response = CreatedUserActions(
             typeAction=created_action.typeAction,

@@ -11,6 +11,7 @@ from sqlalchemy.exc import DataError, IntegrityError, ProgrammingError
 from app.core.exceptions import InternalServerError
 from app.schema.user_points_schema import UserPointsAssign
 from app.schema.wallet_transaction_schema import BaseWalletTransaction
+from app.services.response_cache import user_entity
 from app.services.user_points._base import UserPointsContext
 
 
@@ -173,10 +174,12 @@ class PointsPersistenceMixin(UserPointsContext):
                     )
 
                 await session.commit()
-                return user_points, wallet, transaction
             except (IntegrityError, DataError, ProgrammingError):
                 await session.rollback()
                 raise
             except Exception:
                 await session.rollback()
                 raise
+        # After the commit: the user's cached points must not survive it.
+        await self.response_cache.invalidate(user_entity(external_user_id))
+        return user_points, wallet, transaction

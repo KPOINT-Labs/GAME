@@ -153,7 +153,7 @@ class TestUserService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, {"id": "u1"})
 
     async def test_assign_points_to_user_basic_engagement_creates_wallet(self):
-        user = SimpleNamespace(id=uuid4())
+        user = SimpleNamespace(id=uuid4(), externalUserId="user-1")
         self.user_repository.read_by_id.return_value = user
         self.user_points_repository.get_user_measurement_count.return_value = 1
         self.user_points_repository.get_start_time_for_last_task.return_value = None
@@ -206,10 +206,19 @@ class TestUserService(unittest.IsolatedAsyncioTestCase):
         self.wallet_repository.create.assert_awaited_once()
         self.wallet_transaction_repository.create.assert_awaited_once()
 
+    async def test_assign_points_to_user_invalidates_the_users_cached_points(self):
+        from app.services.response_cache import NullResponseCache
+
+        cache = NullResponseCache()
+        cache.invalidate = AsyncMock()
+        self.service.response_cache = cache
+        await self.test_assign_points_to_user_basic_engagement_creates_wallet()
+        cache.invalidate.assert_awaited_once_with("user:user-1:activity")
+
     async def test_assign_points_to_user_updates_existing_wallet_when_points_present(
         self,
     ):
-        user = SimpleNamespace(id=uuid4())
+        user = SimpleNamespace(id=uuid4(), externalUserId="user-1")
         self.user_repository.read_by_id.return_value = user
         self.user_points_repository.get_user_measurement_count.return_value = 10
         self.user_points_repository.get_start_time_for_last_task.return_value = None
@@ -260,7 +269,7 @@ class TestUserService(unittest.IsolatedAsyncioTestCase):
         self.wallet_repository.create.assert_not_called()
 
     async def test_assign_points_to_user_need_for_motivation_branch(self):
-        user = SimpleNamespace(id=uuid4())
+        user = SimpleNamespace(id=uuid4(), externalUserId="user-1")
         self.user_repository.read_by_id.return_value = user
         self.user_points_repository.get_user_measurement_count.return_value = 3
         start = datetime(2026, 1, 1, 10, 0, 0)
@@ -309,7 +318,7 @@ class TestUserService(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_assign_points_to_user_individual_adjustment_branch(self):
-        user = SimpleNamespace(id=uuid4())
+        user = SimpleNamespace(id=uuid4(), externalUserId="user-1")
         self.user_repository.read_by_id.return_value = user
         self.user_points_repository.get_user_measurement_count.return_value = 3
         start = datetime(2026, 1, 1, 10, 0, 0)
@@ -358,7 +367,7 @@ class TestUserService(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_assign_points_to_user_performance_penalty_branch(self):
-        user = SimpleNamespace(id=uuid4())
+        user = SimpleNamespace(id=uuid4(), externalUserId="user-1")
         start = datetime(2026, 1, 1, 10, 0, 0)
         end = start + timedelta(minutes=15)
         self._setup_assign_points_default_mocks(
@@ -388,7 +397,7 @@ class TestUserService(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_assign_points_to_user_performance_bonus_branch(self):
-        user = SimpleNamespace(id=uuid4())
+        user = SimpleNamespace(id=uuid4(), externalUserId="user-1")
         start = datetime(2026, 1, 1, 10, 0, 0)
         end = start + timedelta(minutes=5)
         self._setup_assign_points_default_mocks(
@@ -420,7 +429,7 @@ class TestUserService(unittest.IsolatedAsyncioTestCase):
     async def test_assign_points_to_user_individual_over_global_unreachable_branch(
         self,
     ):
-        user = SimpleNamespace(id=uuid4())
+        user = SimpleNamespace(id=uuid4(), externalUserId="user-1")
         comparable_duration = ComparableDuration(
             ge_value=True, lt_value=True, gt_value=True
         )
@@ -451,7 +460,7 @@ class TestUserService(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_assign_points_to_user_peak_performer_unreachable_branch(self):
-        user = SimpleNamespace(id=uuid4())
+        user = SimpleNamespace(id=uuid4(), externalUserId="user-1")
         comparable_duration = ComparableDuration(
             ge_value=True, lt_value=True, gt_value=False
         )
@@ -482,7 +491,7 @@ class TestUserService(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_assign_points_to_user_global_advantage_adjustment_else_branch(self):
-        user = SimpleNamespace(id=uuid4())
+        user = SimpleNamespace(id=uuid4(), externalUserId="user-1")
         comparable_duration = ComparableDuration(
             ge_value=True, lt_value=False, gt_value=False
         )
@@ -513,7 +522,7 @@ class TestUserService(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_get_wallet_by_user_id_creates_wallet_when_missing(self):
-        user = SimpleNamespace(id=uuid4())
+        user = SimpleNamespace(id=uuid4(), externalUserId="user-1")
         self.user_repository.read_by_id.return_value = user
         self.wallet_repository.read_by_column.return_value = None
         wallet = WalletModel(
@@ -544,7 +553,7 @@ class TestUserService(unittest.IsolatedAsyncioTestCase):
         self.wallet_repository.create.assert_awaited_once()
 
     async def test_get_wallet_by_external_user_id_delegates(self):
-        user = SimpleNamespace(id=uuid4())
+        user = SimpleNamespace(id=uuid4(), externalUserId="user-1")
         self.user_repository.read_by_column.return_value = user
         expected_response = {"wallet": "ok"}
         self.service.get_wallet_by_user_id = AsyncMock(return_value=expected_response)
@@ -566,7 +575,7 @@ class TestUserService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, expected_user)
 
     async def test_get_points_by_user_id_returns_empty_tasks(self):
-        user = SimpleNamespace(id=uuid4())
+        user = SimpleNamespace(id=uuid4(), externalUserId="user-1")
         self.user_repository.read_by_id.return_value = user
         self.user_points_repository.read_by_column.return_value = []
 
@@ -576,7 +585,7 @@ class TestUserService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.tasks, [])
 
     async def test_get_points_by_user_id_returns_cleaned_tasks(self):
-        user = SimpleNamespace(id=uuid4())
+        user = SimpleNamespace(id=uuid4(), externalUserId="user-1")
         self.user_repository.read_by_id.return_value = user
         self.user_points_repository.read_by_column.return_value = [
             SimpleNamespace(taskId="task-1", userId=user.id),
@@ -603,7 +612,7 @@ class TestUserService(unittest.IsolatedAsyncioTestCase):
             await self.service.preview_points_to_coins_conversion("user-1", -1)
 
     async def test_preview_points_to_coins_conversion_creates_wallet_when_missing(self):
-        user = SimpleNamespace(id=uuid4())
+        user = SimpleNamespace(id=uuid4(), externalUserId="user-1")
         self.user_repository.read_by_id.return_value = user
         self.wallet_repository.read_by_column.return_value = None
         wallet = SimpleNamespace(
@@ -624,7 +633,7 @@ class TestUserService(unittest.IsolatedAsyncioTestCase):
         self.wallet_repository.create.assert_called_once()
 
     async def test_preview_points_to_coins_conversion_external_user_id_delegates(self):
-        user = SimpleNamespace(id=uuid4())
+        user = SimpleNamespace(id=uuid4(), externalUserId="user-1")
         self.user_repository.read_by_column.return_value = user
         self.service.preview_points_to_coins_conversion = AsyncMock(
             return_value={"convertedAmount": 1.0}
@@ -650,7 +659,7 @@ class TestUserService(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_convert_points_to_coins_raises_when_not_enough_points(self):
-        user = SimpleNamespace(id=uuid4())
+        user = SimpleNamespace(id=uuid4(), externalUserId="user-1")
         self.user_repository.read_by_id.return_value = user
         wallet = SimpleNamespace(
             id="wallet-7",
@@ -670,7 +679,7 @@ class TestUserService(unittest.IsolatedAsyncioTestCase):
         self.wallet_repository.update.assert_not_awaited()
 
     async def test_convert_points_to_coins_success(self):
-        user = SimpleNamespace(id=uuid4())
+        user = SimpleNamespace(id=uuid4(), externalUserId="user-1")
         self.user_repository.read_by_id.return_value = user
         wallet = SimpleNamespace(
             id="wallet-8",
@@ -699,7 +708,7 @@ class TestUserService(unittest.IsolatedAsyncioTestCase):
         self.wallet_transaction_repository.create.assert_called_once()
 
     async def test_convert_points_to_coins_creates_wallet_when_missing(self):
-        user = SimpleNamespace(id=uuid4())
+        user = SimpleNamespace(id=uuid4(), externalUserId="user-1")
         self.user_repository.read_by_id.return_value = user
         self.wallet_repository.read_by_column = AsyncMock(return_value=None)
         created_wallet = SimpleNamespace(
@@ -724,7 +733,7 @@ class TestUserService(unittest.IsolatedAsyncioTestCase):
         self.wallet_repository.update.assert_awaited_once()
 
     async def test_convert_points_to_coins_external_user_id_delegates(self):
-        user = SimpleNamespace(id=uuid4())
+        user = SimpleNamespace(id=uuid4(), externalUserId="user-1")
         self.user_repository.read_by_column.return_value = user
         expected = {"transactionId": "tx-1"}
         self.service.convert_points_to_coins = AsyncMock(return_value=expected)

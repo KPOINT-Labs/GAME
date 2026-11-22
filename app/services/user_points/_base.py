@@ -16,6 +16,7 @@ from app.repository.user_points_repository import UserPointsRepository
 from app.repository.user_repository import UserRepository
 from app.repository.wallet_repository import WalletRepository
 from app.repository.wallet_transaction_repository import WalletTransactionRepository
+from app.services.response_cache import ResponseCache
 from app.services.strategy_service import StrategyService
 
 # Cap parallel fan-out so a request over a large user/task list cannot
@@ -40,3 +41,4 @@ class UserPointsContext:
     wallet_transaction_repository: WalletTransactionRepository
     strategy_service: StrategyService
     cohort_repository: CohortRepository | None
+    response_cache: ResponseCache

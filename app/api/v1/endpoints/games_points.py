@@ -430,6 +430,14 @@ Returns:
 - `user`: the requested user's row in the same shape, or `null`
 - `cohort`: the cohort filter that was applied, or `null`
 
+### Freshness
+When the server's response cache is enabled, a leaderboard is cached and
+recomputed when it expires (`RESPONSE_CACHE_LEADERBOARD_TTL_SECONDS`,
+6 hours by default), not after every award. Points awarded since then,
+including the requested user's in `user`, may not show yet. Changes to the
+game or its tasks are reflected immediately. For a user's current total,
+use the user points endpoints.
+
 ### Error Cases
 - `401`: missing or invalid auth credentials
 - `403`: API key rejected or inactive
@@ -597,6 +605,14 @@ Returns:
 - `user`: the requested user's row in the same shape, or `null`
 - `cohort`: the cohort filter that was applied, or `null`
 
+### Freshness
+When the server's response cache is enabled, a leaderboard is cached and
+recomputed when it expires (`RESPONSE_CACHE_LEADERBOARD_TTL_SECONDS`,
+6 hours by default), not after every award. Points awarded since then,
+including the requested user's in `user`, may not show yet. Changes to the
+game or its tasks are reflected immediately. For a user's current total,
+use the user points endpoints.
+
 ### Error Cases
 - `401`: missing or invalid auth credentials
 - `403`: API key rejected or inactive
@@ -740,6 +756,11 @@ Returns a list of point aggregates for the specified user in the game:
 
 A user with no points in the game, a user who does not exist, and a game
 with no tasks all return an empty list (`[]`), not `404`.
+
+### Freshness
+When the server's response cache is enabled the result is cached, but any
+points awarded or action posted for the user, and any change to the game or
+its tasks, refreshes it: the next request reflects the write.
 
 ### Error Cases
 - `401`: missing or invalid auth credentials

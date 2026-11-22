@@ -524,3 +524,155 @@ async def test_cached_game_read_with_redis_down_still_answers():
     compute = AsyncMock(return_value=Out(name="g", n=2))
     result = await _game_read(cache, GameAccess(), load, compute, model=Out)
     assert result == Out(name="g", n=2)
+
+
+# --- coalescing concurrent misses ---------------------------------------------
+
+
+async def test_concurrent_misses_share_one_computation():
+    import asyncio
+
+    from app.services.response_cache import response_cache_coalesced_total
+
+    cache, _ = _cache()
+    release = asyncio.Event()
+    load = AsyncMock(return_value=_game())
+
+    async def slow(game):
+        await release.wait()
+        return {"computed": True}
+
+    compute = AsyncMock(side_effect=slow)
+    before = response_cache_coalesced_total.labels(namespace="game")._value.get()
+    readers = [
+        asyncio.ensure_future(_game_read(cache, GameAccess(), load, compute))
+        for _ in range(5)
+    ]
+    await asyncio.sleep(0.01)
+    release.set()
+    results = await asyncio.gather(*readers)
+
+    assert results == [{"computed": True}] * 5
+    compute.assert_awaited_once()
+    assert load.await_count == 5  # every caller still passes its access check
+    assert (
+        response_cache_coalesced_total.labels(namespace="game")._value.get()
+        == before + 4
+    )
+    assert cache._inflight == {}
+    # Stored once, served from the cache afterwards.
+    assert await _game_read(cache, GameAccess(), load, compute) == {"computed": True}
+    compute.assert_awaited_once()
+
+
+async def test_coalesced_failure_reaches_every_waiter_and_is_not_kept():
+    import asyncio
+
+    cache, _ = _cache()
+    release = asyncio.Event()
+    load = AsyncMock(return_value=_game())
+
+    async def failing(game):
+        await release.wait()
+        raise NotFoundError(detail="Task not found")
+
+    compute = AsyncMock(side_effect=failing)
+    readers = [
+        asyncio.ensure_future(_game_read(cache, GameAccess(), load, compute))
+        for _ in range(3)
+    ]
+    await asyncio.sleep(0.01)
+    release.set()
+    results = await asyncio.gather(*readers, return_exceptions=True)
+
+    assert all(isinstance(r, NotFoundError) for r in results)
+    compute.assert_awaited_once()
+    assert cache._inflight == {}
+    compute.side_effect = None
+    compute.return_value = {"ok": 1}
+    assert await _game_read(cache, GameAccess(), load, compute) == {"ok": 1}
+
+
+async def test_cancelled_waiter_does_not_cancel_shared_computation():
+    import asyncio
+
+    cache, _ = _cache()
+    release = asyncio.Event()
+    load = AsyncMock(return_value=_game())
+
+    async def slow(game):
+        await release.wait()
+        return {"done": True}
+
+    compute = AsyncMock(side_effect=slow)
+    first = asyncio.ensure_future(_game_read(cache, GameAccess(), load, compute))
+    second = asyncio.ensure_future(_game_read(cache, GameAccess(), load, compute))
+    await asyncio.sleep(0.01)
+    first.cancel()  # e.g. the first client disconnected
+    await asyncio.sleep(0)
+    release.set()
+
+    assert await second == {"done": True}
+    assert first.cancelled()
+    compute.assert_awaited_once()
+
+
+async def test_computation_failing_with_no_waiters_left_is_cleaned_up():
+    import asyncio
+
+    cache, _ = _cache()
+    release = asyncio.Event()
+    load = AsyncMock(return_value=_game())
+
+    async def failing(game):
+        await release.wait()
+        raise RuntimeError("db down")
+
+    reader = asyncio.ensure_future(
+        _game_read(cache, GameAccess(), load, AsyncMock(side_effect=failing))
+    )
+    await asyncio.sleep(0.01)
+    reader.cancel()
+    await asyncio.sleep(0)
+    release.set()
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert cache._inflight == {}
+
+
+async def test_coalesce_without_key_or_cache_just_runs():
+    from app.services.response_cache import CacheLookup
+
+    produce = AsyncMock(return_value=1)
+    cache, _ = _cache()
+    assert await cache.coalesce(CacheLookup("ns", None), produce) == 1
+    assert await NullResponseCache().coalesce(CacheLookup("ns", None), produce) == 1
+    assert produce.await_count == 2
+    assert cache._inflight == {}
+
+
+async def test_late_miss_uses_entry_stored_since_its_lookup():
+    """A miss whose lookup raced a finishing computation does not recompute."""
+    cache, _ = _cache()
+    load = AsyncMock(return_value=_game())
+    compute = AsyncMock(return_value={"v": 1})
+    stale_lookup = await cache.lookup("game", [GAMES_ALL, f"game:{GAME_ID}:def"])
+    await _game_read(cache, GameAccess(), load, compute)  # computes and stores
+    compute.assert_awaited_once()
+
+    real_lookup = cache.lookup
+    cache.lookup = AsyncMock(return_value=stale_lookup)  # looked up too early
+    assert await _game_read(cache, GameAccess(), load, compute) == {"v": 1}
+    cache.lookup = real_lookup
+    compute.assert_awaited_once()
+
+
+async def test_recheck_failure_still_computes():
+    cache, client = _cache()
+    load = AsyncMock(return_value=_game())
+    compute = AsyncMock(return_value={"v": 2})
+    lookup = await cache.lookup("game", [GAMES_ALL, f"game:{GAME_ID}:def"])
+    client.down = True
+    cache.lookup = AsyncMock(return_value=lookup)
+    assert await _game_read(cache, GameAccess(), load, compute) == {"v": 2}
+    compute.assert_awaited_once()

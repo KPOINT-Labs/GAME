@@ -60,6 +60,8 @@ from app.services.apikey_cache_backend import build_apikey_cache_backend
 from app.services.response_cache import (
     TTL_GAME_DEFINITION,
     TTL_GAMES_LIST,
+    TTL_LEADERBOARD,
+    TTL_USER_POINTS,
     build_response_cache,
 )
 
@@ -287,6 +289,8 @@ class Container(containers.DeclarativeContainer):
         ttls={
             TTL_GAME_DEFINITION: configs.RESPONSE_CACHE_GAME_DEFINITION_TTL_SECONDS,
             TTL_GAMES_LIST: configs.RESPONSE_CACHE_GAMES_LIST_TTL_SECONDS,
+            TTL_LEADERBOARD: configs.RESPONSE_CACHE_LEADERBOARD_TTL_SECONDS,
+            TTL_USER_POINTS: configs.RESPONSE_CACHE_USER_POINTS_TTL_SECONDS,
         },
     )
 
@@ -374,6 +378,7 @@ class Container(containers.DeclarativeContainer):
         game_repository=game_repository,
         task_repository=task_repository,
         cohort_repository=cohort_repository,
+        response_cache=response_cache,
     )
 
     user_points_service = providers.Factory(
@@ -388,6 +393,7 @@ class Container(containers.DeclarativeContainer):
         strategy_service=strategy_service,
         game_params_repository=game_params_repository,
         cohort_repository=cohort_repository,
+        response_cache=response_cache,
     )
 
     user_service = providers.Factory(
@@ -397,6 +403,7 @@ class Container(containers.DeclarativeContainer):
         task_repository=task_repository,
         wallet_repository=wallet_repository,
         wallet_transaction_repository=wallet_transaction_repository,
+        response_cache=response_cache,
     )
 
     wallet_service = providers.Factory(

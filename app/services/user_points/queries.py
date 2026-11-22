@@ -28,6 +28,13 @@ from app.schema.user_points_schema import (
     UserGamePoints,
 )
 from app.services.game_access import get_authorized_game, get_authorized_user_or_none
+from app.services.response_cache import (
+    TTL_LEADERBOARD,
+    TTL_USER_POINTS,
+    GameAccess,
+    cached_game_read,
+    user_entity,
+)
 from app.services.user_points._base import FANOUT_LIMIT, UserPointsContext
 
 
@@ -401,22 +408,72 @@ class PointsQueryMixin(UserPointsContext):
         Raises:
             NotFoundError: If the game does not exist.
         """
-        game = await self._resolve_leaderboard_game(
-            gameId,
-            api_key=api_key,
-            oauth_user_id=oauth_user_id,
-            is_admin=is_admin,
-            enforce_scope=enforce_scope,
-        )
-        return GameLeaderboard(
-            **await self._build_leaderboard(
-                game,
-                task_id=None,
-                limit=limit,
-                offset=offset,
-                externalUserId=externalUserId,
-                cohort=cohort,
+
+        async def compute(game) -> GameLeaderboard:
+            return GameLeaderboard(
+                **await self._build_leaderboard(
+                    game,
+                    task_id=None,
+                    limit=limit,
+                    offset=offset,
+                    externalUserId=externalUserId,
+                    cohort=cohort,
+                )
             )
+
+        return await self._cached_leaderboard(
+            "leaderboard",
+            gameId,
+            GameAccess(api_key, oauth_user_id, is_admin, enforce_scope),
+            params={
+                "limit": limit,
+                "offset": offset,
+                "externalUserId": externalUserId,
+                "cohort": cohort,
+            },
+            compute=compute,
+            model=GameLeaderboard,
+        )
+
+    async def _cached_leaderboard(
+        self, namespace, gameId, access: GameAccess, *, params, compute, model
+    ):
+        """
+        Serve a leaderboard from the response cache.
+
+        Point awards do not invalidate leaderboards: a cached page is served
+        until ``RESPONSE_CACHE_LEADERBOARD_TTL_SECONDS`` passes, then
+        recomputed. Changes to the game's definition (game patched or
+        deleted, task created, patched or deleted) still invalidate it, so a
+        deleted game or task is never served from the cache.
+
+        Args:
+            namespace (str): Cache namespace of the leaderboard kind.
+            gameId: Internal game identifier.
+            access (GameAccess): Caller scope.
+            params (dict): Paging, cohort, task and requested user.
+            compute: Builds the leaderboard from the authorized game.
+            model: Response model the cached JSON is rebuilt into.
+
+        Returns:
+            The leaderboard.
+        """
+        return await cached_game_read(
+            self.response_cache,
+            namespace=namespace,
+            game_id=gameId,
+            access=access,
+            load_game=lambda: self._resolve_leaderboard_game(
+                gameId,
+                api_key=access.api_key,
+                oauth_user_id=access.oauth_user_id,
+                is_admin=access.is_admin,
+                enforce_scope=access.enforce_scope,
+            ),
+            compute=compute,
+            params=params,
+            ttl_group=TTL_LEADERBOARD,
+            model=model,
         )
 
     async def get_task_leaderboard(
@@ -458,33 +515,43 @@ class PointsQueryMixin(UserPointsContext):
         Raises:
             NotFoundError: If the game, or the task within it, does not exist.
         """
-        game = await self._resolve_leaderboard_game(
-            gameId,
-            api_key=api_key,
-            oauth_user_id=oauth_user_id,
-            is_admin=is_admin,
-            enforce_scope=enforce_scope,
-        )
-        task = await self.task_repository.read_by_gameId_and_externalTaskId(
-            game.id, externalTaskId
-        )
-        if not task:
-            raise NotFoundError(
-                detail=(
-                    f"Task not found with externalTaskId: {externalTaskId} for "
-                    f"gameId: {gameId}"
-                )
+
+        async def compute(game) -> TaskLeaderboard:
+            task = await self.task_repository.read_by_gameId_and_externalTaskId(
+                game.id, externalTaskId
             )
-        return TaskLeaderboard(
-            externalTaskId=task.externalTaskId,
-            **await self._build_leaderboard(
-                game,
-                task_id=task.id,
-                limit=limit,
-                offset=offset,
-                externalUserId=externalUserId,
-                cohort=cohort,
-            ),
+            if not task:
+                raise NotFoundError(
+                    detail=(
+                        f"Task not found with externalTaskId: {externalTaskId} "
+                        f"for gameId: {gameId}"
+                    )
+                )
+            return TaskLeaderboard(
+                externalTaskId=task.externalTaskId,
+                **await self._build_leaderboard(
+                    game,
+                    task_id=task.id,
+                    limit=limit,
+                    offset=offset,
+                    externalUserId=externalUserId,
+                    cohort=cohort,
+                ),
+            )
+
+        return await self._cached_leaderboard(
+            "task_leaderboard",
+            gameId,
+            GameAccess(api_key, oauth_user_id, is_admin, enforce_scope),
+            params={
+                "externalTaskId": externalTaskId,
+                "limit": limit,
+                "offset": offset,
+                "externalUserId": externalUserId,
+                "cohort": cohort,
+            },
+            compute=compute,
+            model=TaskLeaderboard,
         )
 
     async def get_points_by_gameId(
@@ -667,21 +734,56 @@ class PointsQueryMixin(UserPointsContext):
 
         Raises:
             NotFoundError: If the game does not exist.
+
+        Cached per game and user; every points award or action posted for
+        the user, and any change to the game's definition, invalidates it.
         """
-        if enforce_scope:
-            game = await get_authorized_game(
-                self.game_repository,
-                gameId,
-                api_key=api_key,
-                oauth_user_id=oauth_user_id,
-                is_admin=is_admin,
-            )
-        else:
+
+        async def load_game():
+            if enforce_scope:
+                return await get_authorized_game(
+                    self.game_repository,
+                    gameId,
+                    api_key=api_key,
+                    oauth_user_id=oauth_user_id,
+                    is_admin=is_admin,
+                )
             game = await self.game_repository.read_by_column(
                 "id", gameId, not_found_raise_exception=False
             )
-        if not game:
-            raise NotFoundError(detail=f"Game not found by gameId: {gameId}")
+            if not game:
+                raise NotFoundError(detail=f"Game not found by gameId: {gameId}")
+            return game
+
+        return await cached_game_read(
+            self.response_cache,
+            namespace="user_points_in_game",
+            game_id=gameId,
+            access=GameAccess(api_key, oauth_user_id, is_admin, enforce_scope),
+            load_game=load_game,
+            compute=lambda game: self._build_points_of_user_in_game(
+                game, externalUserId
+            ),
+            params={"externalUserId": externalUserId},
+            ttl_group=TTL_USER_POINTS,
+            model=list[PointsAssignedToUser],
+            extra_versions=[user_entity(externalUserId)],
+        )
+
+    async def _build_points_of_user_in_game(
+        self, game, externalUserId
+    ) -> list[PointsAssignedToUser]:
+        """
+        One user's point awards per task in ``game`` (uncached).
+
+        Args:
+            game: The authorized game row.
+            externalUserId (str): External identifier of the user.
+
+        Returns:
+            list[PointsAssignedToUser]: The user's awards; empty when the user
+            has no points, does not exist, or the game has no tasks.
+        """
         user = await self.users_repository.read_by_column(
             "externalUserId", externalUserId, not_found_raise_exception=False
         )
