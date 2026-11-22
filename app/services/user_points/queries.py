@@ -14,6 +14,7 @@ from app.schema.games_schema import ListTasksWithUsers
 from app.schema.task_schema import BaseUserFirstAction, TasksWithUsers
 from app.schema.user_points_schema import (
     AllPointsByGame,
+    AllPointsByGameWithDetails,
     GameDetail,
     GameLeaderboard,
     LeaderboardEntry,
@@ -29,6 +30,7 @@ from app.schema.user_points_schema import (
 )
 from app.services.game_access import get_authorized_game, get_authorized_user_or_none
 from app.services.response_cache import (
+    TTL_AGGREGATE,
     TTL_LEADERBOARD,
     TTL_USER_POINTS,
     GameAccess,
@@ -98,21 +100,43 @@ class PointsQueryMixin(UserPointsContext):
 
         Raises:
             NotFoundError: If the game or its tasks do not exist.
+
+        Cached for ``RESPONSE_CACHE_AGGREGATE_TTL_SECONDS`` (10 min by
+        default): point awards do not refresh it, game/task definition
+        changes do.
         """
-        if enforce_scope:
-            game = await get_authorized_game(
-                self.game_repository,
-                gameId,
-                api_key=api_key,
-                oauth_user_id=oauth_user_id,
-                is_admin=is_admin,
-            )
-        else:
-            game = await self.game_repository.read_by_column(
-                "id", gameId, not_found_raise_exception=False
-            )
-        if not game:
-            raise NotFoundError(detail=f"Game not found by gameId: {game}")
+
+        async def load_game():
+
+            if enforce_scope:
+                game = await get_authorized_game(
+                    self.game_repository,
+                    gameId,
+                    api_key=api_key,
+                    oauth_user_id=oauth_user_id,
+                    is_admin=is_admin,
+                )
+            else:
+                game = await self.game_repository.read_by_column(
+                    "id", gameId, not_found_raise_exception=False
+                )
+            if not game:
+                raise NotFoundError(detail=f"Game not found by gameId: {game}")
+            return game
+
+        return await cached_game_read(
+            self.response_cache,
+            namespace="game_users",
+            game_id=gameId,
+            access=GameAccess(api_key, oauth_user_id, is_admin, enforce_scope),
+            load_game=load_game,
+            compute=lambda game: self._get_users_by_gameId_uncached(game, gameId),
+            ttl_group=TTL_AGGREGATE,
+            model=ListTasksWithUsers,
+        )
+
+    async def _get_users_by_gameId_uncached(self, game, gameId):
+        """Uncached body of :meth:`get_users_by_gameId` for an authorized ``game``."""
         tasks = await self.task_repository.read_by_column(
             "gameId", game.id, not_found_raise_exception=False, only_one=False
         )
@@ -578,19 +602,43 @@ class PointsQueryMixin(UserPointsContext):
 
         Raises:
             NotFoundError: If the game does not exist.
+
+        Cached for ``RESPONSE_CACHE_AGGREGATE_TTL_SECONDS`` (10 min by
+        default): point awards do not refresh it, game/task definition
+        changes do.
         """
-        if enforce_scope:
-            game = await get_authorized_game(
-                self.game_repository,
-                gameId,
-                api_key=api_key,
-                oauth_user_id=oauth_user_id,
-                is_admin=is_admin,
-            )
-        else:
-            game = await self.game_repository.read_by_column(
-                "id", gameId, not_found_message=f"Game with gameId: {gameId} not found"
-            )
+
+        async def load_game():
+
+            if enforce_scope:
+                game = await get_authorized_game(
+                    self.game_repository,
+                    gameId,
+                    api_key=api_key,
+                    oauth_user_id=oauth_user_id,
+                    is_admin=is_admin,
+                )
+            else:
+                game = await self.game_repository.read_by_column(
+                    "id",
+                    gameId,
+                    not_found_message=f"Game with gameId: {gameId} not found",
+                )
+            return game
+
+        return await cached_game_read(
+            self.response_cache,
+            namespace="game_points",
+            game_id=gameId,
+            access=GameAccess(api_key, oauth_user_id, is_admin, enforce_scope),
+            load_game=load_game,
+            compute=self._get_points_by_gameId_uncached,
+            ttl_group=TTL_AGGREGATE,
+            model=AllPointsByGame,
+        )
+
+    async def _get_points_by_gameId_uncached(self, game):
+        """Uncached body of :meth:`get_points_by_gameId` for an authorized ``game``."""
         tasks = await self.task_repository.read_by_column(
             "gameId", game.id, not_found_raise_exception=False, only_one=False
         )
@@ -655,19 +703,43 @@ class PointsQueryMixin(UserPointsContext):
 
         Raises:
             NotFoundError: If the game does not exist.
+
+        Cached for ``RESPONSE_CACHE_AGGREGATE_TTL_SECONDS`` (10 min by
+        default): point awards do not refresh it, game/task definition
+        changes do.
         """
-        if enforce_scope:
-            game = await get_authorized_game(
-                self.game_repository,
-                gameId,
-                api_key=api_key,
-                oauth_user_id=oauth_user_id,
-                is_admin=is_admin,
-            )
-        else:
-            game = await self.game_repository.read_by_column(
-                "id", gameId, not_found_message=f"Game with gameId: {gameId} not found"
-            )
+
+        async def load_game():
+
+            if enforce_scope:
+                game = await get_authorized_game(
+                    self.game_repository,
+                    gameId,
+                    api_key=api_key,
+                    oauth_user_id=oauth_user_id,
+                    is_admin=is_admin,
+                )
+            else:
+                game = await self.game_repository.read_by_column(
+                    "id",
+                    gameId,
+                    not_found_message=f"Game with gameId: {gameId} not found",
+                )
+            return game
+
+        return await cached_game_read(
+            self.response_cache,
+            namespace="game_points_details",
+            game_id=gameId,
+            access=GameAccess(api_key, oauth_user_id, is_admin, enforce_scope),
+            load_game=load_game,
+            compute=self._get_points_by_gameId_with_details_uncached,
+            ttl_group=TTL_AGGREGATE,
+            model=AllPointsByGameWithDetails,
+        )
+
+    async def _get_points_by_gameId_with_details_uncached(self, game):
+        """Uncached body of :meth:`get_points_by_gameId_with_details` for an authorized ``game``."""
         tasks = await self.task_repository.read_by_column(
             "gameId", game.id, not_found_raise_exception=False, only_one=False
         )

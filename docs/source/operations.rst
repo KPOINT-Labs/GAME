@@ -560,9 +560,21 @@ worker shares the cache.
        (``POST .../tasks/{externalTaskId}/action``,
        ``POST /users/{externalUserId}/actions``) for that user. Only that
        user's entries are dropped; other users' stay cached.
+   * - ``GET /games/{gameId}/points``, ``/points/details``,
+       ``/games/{gameId}/users``,
+       ``/games/{gameId}/tasks/{externalTaskId}/points``,
+       ``/games/{gameId}/tasks/{externalTaskId}/points/details``
+     - the same game and task changes, but **not** point awards: served
+       until ``RESPONSE_CACHE_AGGREGATE_TTL_SECONDS`` (10 min) passes
+   * - ``GET /strategies/custom/{id}/usage``, ``/{id}/metrics``,
+       ``/compare``
+     - nothing; cached per caller realm and parameters until
+       ``RESPONSE_CACHE_AGGREGATE_TTL_SECONDS`` (10 min) passes
+   * - ``GET /dashboard/summary``, ``/dashboard/summary/logs``
+     - nothing; cached per date range and grouping (the data is not
+       per caller) until ``RESPONSE_CACHE_AGGREGATE_TTL_SECONDS`` passes
 
-Game and task points totals, wallets and the other per-user endpoints are
-not cached yet.
+Wallets and the other per-user endpoints are not cached yet.
 
 **Expiring popular entries.** When a cached result expires, concurrent
 requests for it in one worker wait for a single recomputation instead of
@@ -604,7 +616,10 @@ counters.
 * ``response_cache_requests_total{namespace, result}``: ``hit``, ``miss``
   or ``bypass`` per cached read (``game``, ``game_strategy``,
   ``game_tasks``, ``game_task``, ``games_list``, ``leaderboard``,
-  ``task_leaderboard``, ``user_points_in_game``).
+  ``task_leaderboard``, ``user_points_in_game``, ``game_points``,
+  ``game_points_details``, ``game_users``, ``task_points``,
+  ``task_points_details``, ``strategy_usage``, ``strategy_metrics``,
+  ``strategy_compare``, ``dashboard_summary``, ``dashboard_summary_logs``).
 * ``response_cache_coalesced_total{namespace}``: misses that shared a
   computation already running in the worker.
 * ``response_cache_invalidations_total{entity}``: version changes by entity

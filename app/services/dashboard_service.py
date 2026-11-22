@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 
 from app.repository.dashboard_repository import DashboardRepository
 from app.repository.game_repository import GameRepository
@@ -8,6 +8,12 @@ from app.repository.user_actions_repository import UserActionsRepository
 from app.repository.user_points_repository import UserPointsRepository
 from app.repository.user_repository import UserRepository
 from app.services.base_service import BaseService
+from app.services.response_cache import (
+    TTL_AGGREGATE,
+    NullResponseCache,
+    ResponseCache,
+    cached_read,
+)
 
 
 class DashboardService(BaseService):
@@ -27,6 +33,7 @@ class DashboardService(BaseService):
         logs_repository: LogsRepository,
         user_points_repository: UserPointsRepository,
         user_actions_repository: UserActionsRepository,
+        response_cache: Optional[ResponseCache] = None,
     ) -> None:
         """
         Initializes the DashboardService with the provided repository.
@@ -42,6 +49,9 @@ class DashboardService(BaseService):
         self.logs_repository = logs_repository
         self.user_points_repository = user_points_repository
         self.user_actions_repository = user_actions_repository
+        # Summaries are cached per date range and grouping for
+        # RESPONSE_CACHE_AGGREGATE_TTL_SECONDS; omitted, nothing is cached.
+        self.response_cache = response_cache or NullResponseCache()
         super().__init__(dashboard_repository)
 
     async def get_dashboard_summary(self, start_date, end_date, group_by) -> Any:
@@ -56,8 +66,15 @@ class DashboardService(BaseService):
         Returns:
             Any: Aggregated summary metrics produced by the repository.
         """
-        return await self.dashboard_repository.get_dashboard_summary(
-            start_date, end_date, group_by
+        return await cached_read(
+            self.response_cache,
+            namespace="dashboard_summary",
+            versions=[],
+            params={"start": start_date, "end": end_date, "groupBy": group_by},
+            ttl_group=TTL_AGGREGATE,
+            compute=lambda: self.dashboard_repository.get_dashboard_summary(
+                start_date, end_date, group_by
+            ),
         )
 
     async def get_dashboard_summary_logs(self, start_date, end_date, group_by) -> Any:
@@ -72,6 +89,13 @@ class DashboardService(BaseService):
         Returns:
             Any: Aggregated log metrics produced by the repository.
         """
-        return await self.dashboard_repository.get_dashboard_summary_logs(
-            start_date, end_date, group_by
+        return await cached_read(
+            self.response_cache,
+            namespace="dashboard_summary_logs",
+            versions=[],
+            params={"start": start_date, "end": end_date, "groupBy": group_by},
+            ttl_group=TTL_AGGREGATE,
+            compute=lambda: self.dashboard_repository.get_dashboard_summary_logs(
+                start_date, end_date, group_by
+            ),
         )

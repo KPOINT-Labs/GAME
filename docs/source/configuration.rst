@@ -325,6 +325,11 @@ cache"). Off by default.
      - ``21600``
      - ``GET /games/{gameId}/users/{externalUserId}/points``. Every award or
        action posted for the user refreshes it, so this is only a safety net.
+   * - ``RESPONSE_CACHE_AGGREGATE_TTL_SECONDS``
+     - ``600``
+     - Other aggregates: game and task points totals (and ``/details``),
+       users per game, custom strategy usage/metrics/compare, dashboard
+       summaries. Point awards do **not** refresh them.
 
 DSL engine limits
 =================

@@ -130,6 +130,12 @@ Returns a task-grouped structure:
 - `422`: malformed `gameId` (invalid UUID format)
 - `500`: retrieval failure
 
+### Freshness
+When the server's response cache is enabled, this result is cached for up
+to `RESPONSE_CACHE_AGGREGATE_TTL_SECONDS` (10 minutes by default): points
+awarded in the meantime may not show yet. Changes to the game or its tasks
+are reflected immediately.
+
 <sub>**Id_endpoint:** `get_users_by_gameId`</sub>
 """  # noqa
 

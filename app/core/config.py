@@ -402,6 +402,11 @@ class Configs(BaseSettings):
     RESPONSE_CACHE_USER_POINTS_TTL_SECONDS: int = _env_to_int(
         "RESPONSE_CACHE_USER_POINTS_TTL_SECONDS", 21600
     )
+    # Other aggregates: game/task points totals, users per game, strategy
+    # usage/metrics/compare, dashboard summaries. Not invalidated by awards.
+    RESPONSE_CACHE_AGGREGATE_TTL_SECONDS: int = _env_to_int(
+        "RESPONSE_CACHE_AGGREGATE_TTL_SECONDS", 600
+    )
 
     SQLALCHEMY_ECHO: bool = _env_to_bool("SQLALCHEMY_ECHO", False)
     # Off by default: on a hung/partitioned server the pre-ping itself blocks

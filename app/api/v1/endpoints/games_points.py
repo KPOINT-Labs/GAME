@@ -145,6 +145,12 @@ Returns:
 - `422`: malformed `gameId` (invalid UUID format)
 - `500`: retrieval failure
 
+### Freshness
+When the server's response cache is enabled, this result is cached for up
+to `RESPONSE_CACHE_AGGREGATE_TTL_SECONDS` (10 minutes by default): points
+awarded in the meantime may not show yet. Changes to the game or its tasks
+are reflected immediately.
+
 <sub>**Id_endpoint:** `get_points_by_gameId`</sub>
 """  # noqa
 
@@ -276,6 +282,12 @@ Returns:
 - `404`: no game found with the provided `gameId`
 - `422`: malformed `gameId` (invalid UUID format)
 - `500`: retrieval failure
+
+### Freshness
+When the server's response cache is enabled, this result is cached for up
+to `RESPONSE_CACHE_AGGREGATE_TTL_SECONDS` (10 minutes by default): points
+awarded in the meantime may not show yet. Changes to the game or its tasks
+are reflected immediately.
 
 <sub>**Id_endpoint:** `get_points_by_gameId_with_details`</sub>
 """  # noqa
@@ -1652,6 +1664,12 @@ Returns a list of per-user aggregates:
 - `404`: game/task association not found
 - `422`: malformed path parameters
 - `500`: retrieval failure
+
+### Freshness
+When the server's response cache is enabled, this result is cached for up
+to `RESPONSE_CACHE_AGGREGATE_TTL_SECONDS` (10 minutes by default): points
+awarded in the meantime may not show yet. Changes to the game or its tasks
+are reflected immediately.
 
 <sub>**Id_endpoint:** `get_points_by_task_id`</sub>
 """  # noqa

@@ -676,3 +676,25 @@ async def test_recheck_failure_still_computes():
     cache.lookup = AsyncMock(return_value=lookup)
     assert await _game_read(cache, GameAccess(), load, compute) == {"v": 2}
     compute.assert_awaited_once()
+
+
+def test_encode_keeps_fields_of_subclass_instances():
+    """A base-typed field holding a subclass keeps the subclass's fields."""
+    from typing import List as _List
+
+    from app.services.response_cache import _encode
+
+    class Base(BaseModel):
+        name: str
+
+    class Detailed(Base):
+        extra: _List[int]
+
+    class Holder(BaseModel):
+        items: _List[Base]
+
+    value = {"holder": Holder(items=[Detailed(name="a", extra=[1, 2])]), "n": (1,)}
+    assert _encode(value) == {
+        "holder": {"items": [{"name": "a", "extra": [1, 2]}]},
+        "n": [1],
+    }

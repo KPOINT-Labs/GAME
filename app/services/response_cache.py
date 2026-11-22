@@ -116,6 +116,9 @@ TTL_GAMES_LIST = "games_list"
 TTL_LEADERBOARD = "leaderboard"
 # One user's points in a game; invalidated by that user's awards and actions.
 TTL_USER_POINTS = "user_points"
+# Other aggregates (points totals, users per game, strategy observability,
+# dashboard): short-lived, not invalidated by awards.
+TTL_AGGREGATE = "aggregate"
 
 # --- Entities ---------------------------------------------------------------
 # An entity is a string naming something whose version cached results embed.
@@ -603,6 +606,29 @@ M = TypeVar("M", bound=BaseModel)
 Params = Optional[Mapping[str, Any]]
 
 
+def _encode(value: Any) -> Any:
+    """
+    JSON-compatible form of a result, for storing in the cache.
+
+    ``jsonable_encoder`` alone serializes a model by its *declared* field
+    types, so a field declared as a base model but holding a subclass
+    instance (``AllPointsByGame`` holding ``PointsAssignedToUserDetails``)
+    would lose the subclass's fields. Models are therefore dumped by their
+    actual type first (``serialize_as_any``), then encoded as usual.
+    """
+    return jsonable_encoder(_dump_models(value))
+
+
+def _dump_models(value: Any) -> Any:
+    if isinstance(value, BaseModel):
+        return value.model_dump(by_alias=True, serialize_as_any=True)
+    if isinstance(value, (list, tuple)):
+        return [_dump_models(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _dump_models(item) for key, item in value.items()}
+    return value
+
+
 def _decode(body: Any, model: Any) -> Any:
     """
     Rebuild the result type from cached JSON: a pydantic model, or any type
@@ -643,7 +669,7 @@ async def cached_read(
     ``model`` when given. Disabled, ``compute()`` is returned untouched.
 
     Only use this for results that do not depend on the caller beyond what
-    ``params`` covers. ``params`` may be a callable, evaluated only when the
+    ``params`` covers. Concurrent misses share one ``compute``. ``params`` may be a callable, evaluated only when the
     cache is enabled.
     """
     if not cache.enabled:
@@ -651,9 +677,13 @@ async def cached_read(
     lookup = await cache.lookup(namespace, list(versions), _resolve_params(params))
     if lookup.hit:
         return _decode(lookup.value, model)
-    body = jsonable_encoder(await compute())
-    await cache.store(lookup, body, cache.ttl(ttl_group))
-    return _decode(body, model)
+
+    async def produce() -> Any:
+        body = _encode(await compute())
+        await cache.store(lookup, body, cache.ttl(ttl_group))
+        return body
+
+    return _decode(await cache.coalesce(lookup, produce), model)
 
 
 @dataclass(frozen=True)
@@ -720,7 +750,7 @@ async def cached_game_read(
                 "apiKey_used": getattr(game, "apiKey_used", None),
                 "oauth_user_id": getattr(game, "oauth_user_id", None),
             },
-            "body": jsonable_encoder(await compute(game)),
+            "body": _encode(await compute(game)),
         }
         await cache.store(lookup, entry, cache.ttl(ttl_group))
         return entry

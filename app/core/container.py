@@ -58,6 +58,7 @@ from app.services import (
 )
 from app.services.apikey_cache_backend import build_apikey_cache_backend
 from app.services.response_cache import (
+    TTL_AGGREGATE,
     TTL_GAME_DEFINITION,
     TTL_GAMES_LIST,
     TTL_LEADERBOARD,
@@ -291,6 +292,7 @@ class Container(containers.DeclarativeContainer):
             TTL_GAMES_LIST: configs.RESPONSE_CACHE_GAMES_LIST_TTL_SECONDS,
             TTL_LEADERBOARD: configs.RESPONSE_CACHE_LEADERBOARD_TTL_SECONDS,
             TTL_USER_POINTS: configs.RESPONSE_CACHE_USER_POINTS_TTL_SECONDS,
+            TTL_AGGREGATE: configs.RESPONSE_CACHE_AGGREGATE_TTL_SECONDS,
         },
     )
 
@@ -477,6 +479,7 @@ class Container(containers.DeclarativeContainer):
         logs_repository=logs_repository,
         user_points_repository=user_points_repository,
         user_actions_repository=user_actions_repository,
+        response_cache=response_cache,
     )
 
     oauth_users_service = providers.Factory(
@@ -507,4 +510,5 @@ class Container(containers.DeclarativeContainer):
         StrategyObservabilityService,
         execution_log_repository=strategy_execution_log_repository,
         strategy_definition_service=strategy_definition_service,
+        response_cache=response_cache,
     )

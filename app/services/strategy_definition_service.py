@@ -47,8 +47,10 @@ from app.services.base_service import BaseService
 from app.services.response_cache import (
     GAMES_ALL,
     GAMES_LIST,
+    TTL_AGGREGATE,
     NullResponseCache,
     ResponseCache,
+    cached_read,
 )
 
 # Kept in sync with ``CUSTOM_STRATEGY_PREFIX`` in
@@ -519,7 +521,24 @@ class StrategyDefinitionService(BaseService):
         only be assigned a strategy validated to live in its own realm,
         so every consumer of ``custom:<uuid>`` shares the strategy's
         realm.
+
+        Cached per realm and id for ``RESPONSE_CACHE_AGGREGATE_TTL_SECONDS``
+        (10 min by default); assignments made since may not show yet.
         """
+        return await cached_read(
+            self.response_cache,
+            namespace="strategy_usage",
+            versions=[],
+            params={"realmId": realmId, "id": id},
+            ttl_group=TTL_AGGREGATE,
+            compute=lambda: self._get_usage_uncached(id=id, realmId=realmId),
+            model=StrategyUsageRead,
+        )
+
+    async def _get_usage_uncached(
+        self, *, id: str, realmId: Optional[str]
+    ) -> StrategyUsageRead:
+        """Uncached body of :meth:`get_usage`."""
         if self.game_repository is None or self.task_repository is None:
             raise BadRequestError(
                 detail=(
