@@ -44,6 +44,12 @@ from app.schema.strategy_definition_schema import (
     StrategyUsageTask,
 )
 from app.services.base_service import BaseService
+from app.services.response_cache import (
+    GAMES_ALL,
+    GAMES_LIST,
+    NullResponseCache,
+    ResponseCache,
+)
 
 # Kept in sync with ``CUSTOM_STRATEGY_PREFIX`` in
 # ``app/services/strategy_service.py``. We inline the literal here
@@ -75,6 +81,7 @@ class StrategyDefinitionService(BaseService):
         strategy_definition_repository: StrategyDefinitionRepository,
         game_repository=None,
         task_repository=None,
+        response_cache: Optional[ResponseCache] = None,
     ) -> None:
         """
         ``game_repository`` and ``task_repository`` are optional so legacy
@@ -83,10 +90,14 @@ class StrategyDefinitionService(BaseService):
         The rollback flow requires both - when missing,
         :meth:`rollback` raises a precise error rather than silently
         leaving cascade UPDATEs undone.
+
+        ``response_cache`` is invalidated when a rollback re-points games
+        and tasks to another strategy version.
         """
         self.strategy_definition_repository = strategy_definition_repository
         self.game_repository = game_repository
         self.task_repository = task_repository
+        self.response_cache = response_cache or NullResponseCache()
         super().__init__(strategy_definition_repository)
 
     @staticmethod
@@ -651,14 +662,17 @@ class StrategyDefinitionService(BaseService):
         if displaced is not None:
             old_strategy_id = f"{_CUSTOM_STRATEGY_PREFIX}{displaced.id}"
             new_strategy_id = f"{_CUSTOM_STRATEGY_PREFIX}{target.id}"
-            games_reassigned = await self.game_repository.bulk_update_strategy_id(
-                old_strategy_id=old_strategy_id,
-                new_strategy_id=new_strategy_id,
-            )
-            tasks_reassigned = await self.task_repository.bulk_update_strategy_id(
-                old_strategy_id=old_strategy_id,
-                new_strategy_id=new_strategy_id,
-            )
+            # The UPDATEs can touch any number of games, so every game's
+            # cached definition (and the games list) is dropped.
+            async with self.response_cache.invalidating(GAMES_ALL, GAMES_LIST):
+                games_reassigned = await self.game_repository.bulk_update_strategy_id(
+                    old_strategy_id=old_strategy_id,
+                    new_strategy_id=new_strategy_id,
+                )
+                tasks_reassigned = await self.task_repository.bulk_update_strategy_id(
+                    old_strategy_id=old_strategy_id,
+                    new_strategy_id=new_strategy_id,
+                )
 
         promoted = await self.get_strategy(id=str(target.id), realmId=realmId)
         return RollbackResult(

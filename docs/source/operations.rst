@@ -493,8 +493,8 @@ stay silent while archiving is off.
 Redis outages
 =============
 
-Redis is optional (``APIKEY_CACHE_BACKEND`` / ``ABUSE_PREVENTION_BACKEND``),
-and losing it at runtime does not fail requests
+Redis is optional (``APIKEY_CACHE_BACKEND`` / ``ABUSE_PREVENTION_BACKEND`` /
+``RESPONSE_CACHE_ENABLED``), and losing it at runtime does not fail requests
 (``app/services/redis_resilience.py``):
 
 * **API key cache**: lookups use a per-process in-memory cache instead, i.e.
@@ -505,6 +505,10 @@ and losing it at runtime does not fail requests
   (``abuse_limit_counter``) instead, so limits stay enforced. Counts start
   afresh there, so a window that spans the switch can admit up to twice its
   limit once.
+* **Response cache**: reads skip the cache and are computed from the
+  database, so the database takes the full read load. Invalidations that
+  could not be written are made up for once Redis is back (see "Response
+  cache" below).
 * **Fail fast**: calls time out after ``REDIS_SOCKET_TIMEOUT_MS`` (500 ms)
   and are not retried. After a failure Redis is skipped for
   ``REDIS_FAILURE_COOLDOWN_SECONDS`` (5 s), so only the first request (and
@@ -519,6 +523,84 @@ and losing it at runtime does not fail requests
   request took about 1 s (two 500 ms timeouts) and following requests about
   0.2 ms; stopped (connection refused), requests fell back instantly; both
   recovered on the next probe.
+
+Response cache
+==============
+
+With ``RESPONSE_CACHE_ENABLED=true`` (and ``REDIS_URL``), read results are
+cached in Redis (``app/services/response_cache.py``). Every API replica and
+worker shares the cache.
+
+**What is cached.** Results that only change when a game or task is
+written:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 46 54
+
+   * - Endpoint
+     - Invalidated by
+   * - ``GET /games``
+     - creating, duplicating, patching or deleting any game; a custom strategy
+       rollback that re-points games
+   * - ``GET /games/{gameId}``, ``/games/{gameId}/strategy``,
+       ``/games/{gameId}/tasks``, ``/games/{gameId}/tasks/{externalTaskId}``
+     - patching or deleting that game; creating (also in bulk), duplicating,
+       patching or deleting one of its tasks; a custom strategy rollback that
+       re-points games or tasks
+
+Points, leaderboards, wallets and other per-user data are not cached yet.
+
+**How invalidation works.** Each cached result's key includes the current
+*version* of every entity it depends on: the game's definition, the list of
+games, and a global epoch. A write gives the affected entities a new random
+version after it commits, so later reads compute and cache a fresh result.
+Results cached under an old version are never read again and expire on
+their TTL (one day by default). Because every write through the API
+invalidates, the TTL only bounds staleness after a change made outside the
+API (manual SQL, scripts, restores) - flush the cache after one (below). Nothing is scanned or deleted. Versions are random tokens, so a
+version key that expires or is evicted only causes a miss.
+
+**Access control is unchanged.** Results shared by callers (one game's
+definition) are cached once, together with the game's owner. A cache hit
+applies the same ownership check as the database path (403 for another
+API key or OAuth user). ``GET /games`` is filtered by caller, so it is
+cached per caller scope (all admins share one entry). Audit logging and rate
+limiting run on every request, hit or miss.
+
+**When Redis is unavailable**, reads bypass the cache (counted in
+``redis_fallback_total{component="response_cache"}``). A write during the
+outage cannot change versions in Redis, so the worker records the loss.
+On its next successful Redis call it changes the global epoch, which drops
+every cached result. Until then, results cached before the outage can be
+served by other workers for up to their TTL.
+
+**Eviction.** Every cache key has a TTL. If the Redis instance is shared
+with rate limiting, use ``maxmemory-policy volatile-lru`` (or a separate
+instance) so memory pressure evicts cache entries, never rate-limit
+counters.
+
+**Metrics.**
+
+* ``response_cache_requests_total{namespace, result}``: ``hit``, ``miss``
+  or ``bypass`` per cached read (``game``, ``game_strategy``,
+  ``game_tasks``, ``game_task``, ``games_list``).
+* ``response_cache_invalidations_total{entity}``: version changes by entity
+  type (``game:def``, ``games:list``, ``games:all``, ``epoch``).
+* ``response_cache_lost_invalidations_total``: version changes lost to a
+  Redis outage (each later triggers an epoch change).
+* ``response_cache_oversize_total{namespace}``: results too large to cache
+  (``RESPONSE_CACHE_MAX_ENTRY_BYTES``).
+
+To flush the whole cache by hand, give the epoch a new value. The key is
+``<RESPONSE_CACHE_KEY_PREFIX>v:epoch``; with the API's environment loaded
+(for example in the API container), this uses the configured prefix and
+falls back to the default ``game:rc:``:
+
+.. code-block:: bash
+
+   redis-cli -u "$REDIS_URL" SET "${RESPONSE_CACHE_KEY_PREFIX:-game:rc:}v:epoch" \
+     "$(date +%s%N)" EX "${RESPONSE_CACHE_VERSION_TTL_SECONDS:-172800}"
 
 Scaling guidance
 ================

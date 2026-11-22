@@ -57,6 +57,11 @@ from app.services import (
     oauth_users_service,
 )
 from app.services.apikey_cache_backend import build_apikey_cache_backend
+from app.services.response_cache import (
+    TTL_GAME_DEFINITION,
+    TTL_GAMES_LIST,
+    build_response_cache,
+)
 
 
 class Container(containers.DeclarativeContainer):
@@ -267,6 +272,24 @@ class Container(containers.DeclarativeContainer):
         GameParamsService, game_params_repository=game_params_repository
     )
 
+    # Shared Redis response cache (a NullResponseCache when disabled).
+    # Declared before the services that read or invalidate it.
+    response_cache = providers.Singleton(
+        build_response_cache,
+        enabled=configs.RESPONSE_CACHE_ENABLED,
+        redis_url=configs.REDIS_URL,
+        key_prefix=configs.RESPONSE_CACHE_KEY_PREFIX,
+        socket_timeout_seconds=configs.REDIS_SOCKET_TIMEOUT_MS / 1000,
+        connect_timeout_seconds=configs.REDIS_CONNECT_TIMEOUT_MS / 1000,
+        failure_cooldown_seconds=configs.REDIS_FAILURE_COOLDOWN_SECONDS,
+        version_ttl_seconds=configs.RESPONSE_CACHE_VERSION_TTL_SECONDS,
+        max_entry_bytes=configs.RESPONSE_CACHE_MAX_ENTRY_BYTES,
+        ttls={
+            TTL_GAME_DEFINITION: configs.RESPONSE_CACHE_GAME_DEFINITION_TTL_SECONDS,
+            TTL_GAMES_LIST: configs.RESPONSE_CACHE_GAMES_LIST_TTL_SECONDS,
+        },
+    )
+
     strategy_definition_service = providers.Factory(
         StrategyDefinitionService,
         strategy_definition_repository=strategy_definition_repository,
@@ -277,6 +300,7 @@ class Container(containers.DeclarativeContainer):
         # supplies them.
         game_repository=game_repository,
         task_repository=task_repository,
+        response_cache=response_cache,
     )
 
     # Declared before strategy_service so the latter can inject it for
@@ -327,6 +351,7 @@ class Container(containers.DeclarativeContainer):
         # Needed by duplicate_game to deep-copy each
         # task's params into the new game.
         task_params_repository=task_params_repository,
+        response_cache=response_cache,
     )
 
     task_service = providers.Factory(
@@ -339,6 +364,7 @@ class Container(containers.DeclarativeContainer):
         game_params_repository=game_params_repository,
         task_params_repository=task_params_repository,
         strategy_definition_service=strategy_definition_service,
+        response_cache=response_cache,
     )
 
     user_actions_service = providers.Factory(

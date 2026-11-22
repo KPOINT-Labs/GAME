@@ -2,6 +2,8 @@ from typing import Any
 
 from app.core.exceptions import ForbiddenError, NotFoundError
 
+GAME_FORBIDDEN_DETAIL = "You do not have permission to access this game"
+
 
 def can_access_user(
     user: Any,
@@ -175,6 +177,6 @@ async def get_authorized_game(
         oauth_user_id=oauth_user_id,
         is_admin=is_admin,
     ):
-        raise ForbiddenError(detail="You do not have permission to access this game")
+        raise ForbiddenError(detail=GAME_FORBIDDEN_DETAIL)
 
     return game

@@ -15,6 +15,7 @@ from app.repository.task_params_repository import TaskParamsRepository
 from app.repository.task_repository import TaskRepository
 from app.repository.user_points_repository import UserPointsRepository
 from app.repository.user_repository import UserRepository
+from app.services.response_cache import ResponseCache
 from app.services.strategy_definition_service import StrategyDefinitionService
 from app.services.strategy_service import StrategyService
 
@@ -34,6 +35,7 @@ class TaskServiceContext:
     game_params_repository: GameParamsRepository
     task_params_repository: TaskParamsRepository
     strategy_definition_service: Optional[StrategyDefinitionService]
+    response_cache: ResponseCache
 
 
 def apply_strategy_variable_overrides(params, strategy_data) -> None:

@@ -20,6 +20,7 @@ from app.schema.tasks_params_schema import (
     UpdateTaskParams,
 )
 from app.services.game_access import get_authorized_game
+from app.services.response_cache import game_definition_entity
 from app.services.strategy_service import (
     is_custom_strategy_id,
     parse_custom_strategy_id,
@@ -157,14 +158,15 @@ class TaskMutationMixin(TaskServiceContext):
                 detail=("It is not possible to update the task with the same data")
             )
 
-        if changed_fields:
-            task = await self.task_repository.patch_by_id(taskId, changed_fields)
-
         updated_params = None
-        if params_provided:
-            updated_params = await self._sync_task_params(
-                taskId, schema.params, api_key=api_key
-            )
+        async with self.response_cache.invalidating(game_definition_entity(gameId)):
+            if changed_fields:
+                task = await self.task_repository.patch_by_id(taskId, changed_fields)
+
+            if params_provided:
+                updated_params = await self._sync_task_params(
+                    taskId, schema.params, api_key=api_key
+                )
 
         return ResponsePatchTask(
             taskId=task.id,
@@ -305,7 +307,8 @@ class TaskMutationMixin(TaskServiceContext):
             is_admin=is_admin,
             enforce_scope=enforce_scope,
         )
-        await self.task_repository.delete_task_by_id(taskId)
+        async with self.response_cache.invalidating(game_definition_entity(gameId)):
+            await self.task_repository.delete_task_by_id(taskId)
         return ResponseDeleteTask(
             taskId=task.id,
             gameId=gameId,
@@ -454,23 +457,24 @@ class TaskMutationMixin(TaskServiceContext):
             new_task_dict["apiKey_used"] = api_key
         new_task = CreateTask(**new_task_dict)
 
-        created_task = await self.task_repository.create(new_task)
         created_params = []
         params = create_query.params
-        if params:
-            del create_query.params
+        async with self.response_cache.invalidating(game_definition_entity(gameId)):
+            created_task = await self.task_repository.create(new_task)
+            if params:
+                del create_query.params
 
-            for param in params:
-                params_dict = param.model_dump()
-                params_dict["taskId"] = str(created_task.id)
-                params_dict["value"] = str(params_dict["value"])
-                if api_key:
-                    params_dict["apiKey_used"] = api_key
-                params_to_insert = InsertTaskParams(**params_dict)
-                created_param = await self.task_params_repository.create(
-                    params_to_insert
-                )
-                created_params.append(created_param)
+                for param in params:
+                    params_dict = param.model_dump()
+                    params_dict["taskId"] = str(created_task.id)
+                    params_dict["value"] = str(params_dict["value"])
+                    if api_key:
+                        params_dict["apiKey_used"] = api_key
+                    params_to_insert = InsertTaskParams(**params_dict)
+                    created_param = await self.task_params_repository.create(
+                        params_to_insert
+                    )
+                    created_params.append(created_param)
 
         game_params = await self.game_params_repository.read_by_column(
             "gameId", gameId, not_found_raise_exception=False, only_one=False

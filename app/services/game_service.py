@@ -22,6 +22,16 @@ from app.schema.task_schema import CreateTask
 from app.schema.tasks_params_schema import InsertTaskParams
 from app.services.base_service import BaseService
 from app.services.game_access import get_authorized_game
+from app.services.response_cache import (
+    GAMES_LIST,
+    TTL_GAMES_LIST,
+    GameAccess,
+    NullResponseCache,
+    ResponseCache,
+    cached_game_read,
+    cached_read,
+    game_definition_entity,
+)
 from app.services.strategy_definition_service import StrategyDefinitionService
 from app.services.strategy_service import (
     StrategyService,
@@ -54,6 +64,7 @@ class GameService(BaseService):
         strategy_service: StrategyService,
         strategy_definition_service: Optional[StrategyDefinitionService] = None,
         task_params_repository: Optional[TaskParamsRepository] = None,
+        response_cache: Optional[ResponseCache] = None,
     ) -> None:
         """
         Initializes the GameService with the provided repositories and
@@ -69,6 +80,9 @@ class GameService(BaseService):
         reason; it is only needed by :meth:`duplicate_game` to deep-copy
         each task's params. When omitted, duplication raises a clear error
         instead of silently dropping params.
+
+        ``response_cache`` caches the game-definition reads and is
+        invalidated by the writes here; omitted, nothing is cached.
         """
         self.game_repository = game_repository
         self.game_params_repository = game_params_repository
@@ -76,7 +90,44 @@ class GameService(BaseService):
         self.task_params_repository = task_params_repository
         self.strategy_service = strategy_service
         self.strategy_definition_service = strategy_definition_service
+        self.response_cache = response_cache or NullResponseCache()
         super().__init__(game_repository)
+
+    async def _load_game_for_read(
+        self,
+        gameId: UUID,
+        access: GameAccess,
+        not_found_message: str,
+    ) -> Any:
+        """
+        Load a game for a read, applying the caller's scope when asked.
+
+        Args:
+            gameId (UUID): The game ID.
+            access (GameAccess): Caller scope.
+            not_found_message (str): Detail for the 404 without scoping.
+
+        Returns:
+            Any: The game row.
+
+        Raises:
+            NotFoundError: If the game does not exist.
+            ForbiddenError: If the caller may not access the game.
+        """
+        if access.enforce_scope:
+            return await get_authorized_game(
+                self.game_repository,
+                gameId,
+                api_key=access.api_key,
+                oauth_user_id=access.oauth_user_id,
+                is_admin=access.is_admin,
+            )
+        game = await self.game_repository.read_by_id(
+            gameId, not_found_raise_exception=False
+        )
+        if not game:
+            raise NotFoundError(detail=not_found_message)
+        return game
 
     async def get_by_gameId(
         self,
@@ -96,31 +147,36 @@ class GameService(BaseService):
         Returns:
             BaseGameResult: The game details.
         """
-        if enforce_scope:
-            response = await get_authorized_game(
-                self.game_repository,
-                gameId,
-                api_key=api_key,
-                oauth_user_id=oauth_user_id,
-                is_admin=is_admin,
-            )
-        else:
-            response = await self.game_repository.read_by_column(
+        access = GameAccess(api_key, oauth_user_id, is_admin, enforce_scope)
+
+        async def load_game():
+            if enforce_scope:
+                return await self._load_game_for_read(gameId, access, "")
+            return await self.game_repository.read_by_column(
                 "id",
                 gameId,
                 not_found_raise_exception=True,
                 only_one=True,
                 not_found_message=f"Game not found by gameId: {gameId}",
             )
-        params = await self.game_params_repository.read_by_column(
-            "gameId", response.id, not_found_raise_exception=False, only_one=False
+
+        async def compute(game) -> BaseGameResult:
+            params = await self.game_params_repository.read_by_column(
+                "gameId", game.id, not_found_raise_exception=False, only_one=False
+            )
+            game_dict = game.model_dump()
+            game_dict["params"] = params
+            return BaseGameResult(**game_dict, gameId=gameId)
+
+        return await cached_game_read(
+            self.response_cache,
+            namespace="game",
+            game_id=gameId,
+            access=access,
+            load_game=load_game,
+            compute=compute,
+            model=BaseGameResult,
         )
-        response_dict = response.model_dump()
-        response_dict["params"] = params
-
-        response = BaseGameResult(**response_dict, gameId=gameId)
-
-        return response
 
     async def delete_game_by_id(
         self,
@@ -155,7 +211,11 @@ class GameService(BaseService):
         if not game:
             raise NotFoundError(detail=f"Game not found by gameId: {gameId}")
 
-        if await self.game_repository.delete_game_by_id(gameId):
+        async with self.response_cache.invalidating(
+            GAMES_LIST, game_definition_entity(gameId)
+        ):
+            deleted = await self.game_repository.delete_game_by_id(gameId)
+        if deleted:
             response = BaseGameResult(
                 externalGameId=game.externalGameId,
                 strategyId=game.strategyId,
@@ -187,11 +247,29 @@ class GameService(BaseService):
         Returns:
             list: A list of all games matching the schema.
         """
-        return await self.game_repository.get_all_games(
-            schema,
-            api_key=api_key,
-            oauth_user_id=oauth_user_id,
-            is_admin=is_admin,
+        # The list is filtered by caller, so the caller scope is part of the
+        # key (admins share one entry).
+        scope = (
+            {"admin": True}
+            if is_admin
+            else {"apiKey": api_key, "oauthUserId": oauth_user_id}
+        )
+
+        async def compute():
+            return await self.game_repository.get_all_games(
+                schema,
+                api_key=api_key,
+                oauth_user_id=oauth_user_id,
+                is_admin=is_admin,
+            )
+
+        return await cached_read(
+            self.response_cache,
+            namespace="games_list",
+            versions=[GAMES_LIST],
+            params=lambda: {"scope": scope, "query": schema.model_dump(mode="json")},
+            ttl_group=TTL_GAMES_LIST,
+            compute=compute,
         )
 
     async def get_by_externalId(self, externalGameId: str) -> Any:
@@ -270,22 +348,23 @@ class GameService(BaseService):
 
         if oauth_user_id:
             schema.oauth_user_id = oauth_user_id
-        game = await self.game_repository.create(schema)
-        if params:
-            del schema.params
+        async with self.response_cache.invalidating(GAMES_LIST):
+            game = await self.game_repository.create(schema)
+            if params:
+                del schema.params
 
-            for param in params:
-                params_dict = param.model_dump()
-                params_dict["gameId"] = str(game.id)
-                if api_key:
-                    params_dict["apiKey_used"] = api_key
-                if oauth_user_id:
-                    params_dict["oauth_user_id"] = oauth_user_id
-                params_to_insert = InsertGameParams(**params_dict)
-                created_param = await self.game_params_repository.create(
-                    params_to_insert
-                )
-                created_params.append(created_param)
+                for param in params:
+                    params_dict = param.model_dump()
+                    params_dict["gameId"] = str(game.id)
+                    if api_key:
+                        params_dict["apiKey_used"] = api_key
+                    if oauth_user_id:
+                        params_dict["oauth_user_id"] = oauth_user_id
+                    params_to_insert = InsertGameParams(**params_dict)
+                    created_param = await self.game_params_repository.create(
+                        params_to_insert
+                    )
+                    created_params.append(created_param)
 
         response = GameCreated(
             **game.model_dump(),
@@ -365,26 +444,31 @@ class GameService(BaseService):
         source_tasks = await self.task_repository.read_by_column(
             "gameId", source.id, not_found_raise_exception=False, only_one=False
         )
-        for task in source_tasks or []:
-            new_task = CreateTask(
-                externalTaskId=task.externalTaskId,
-                gameId=str(new_game_id),
-                strategyId=task.strategyId,
-                apiKey_used=api_key,
-            )
-            created_task = await self.task_repository.create(new_task)
-
-            task_params = await self.task_params_repository.read_by_column(
-                "taskId", task.id, not_found_raise_exception=False, only_one=False
-            )
-            for param in task_params or []:
-                params_to_insert = InsertTaskParams(
-                    taskId=str(created_task.id),
-                    key=param.key,
-                    value=str(param.value),
+        # The new game exists (and may be read and cached) before its tasks
+        # are copied, so its definition is invalidated afterwards.
+        async with self.response_cache.invalidating(
+            game_definition_entity(new_game_id)
+        ):
+            for task in source_tasks or []:
+                new_task = CreateTask(
+                    externalTaskId=task.externalTaskId,
+                    gameId=str(new_game_id),
+                    strategyId=task.strategyId,
                     apiKey_used=api_key,
                 )
-                await self.task_params_repository.create(params_to_insert)
+                created_task = await self.task_repository.create(new_task)
+
+                task_params = await self.task_params_repository.read_by_column(
+                    "taskId", task.id, not_found_raise_exception=False, only_one=False
+                )
+                for param in task_params or []:
+                    params_to_insert = InsertTaskParams(
+                        taskId=str(created_task.id),
+                        key=param.key,
+                        value=str(param.value),
+                        apiKey_used=api_key,
+                    )
+                    await self.task_params_repository.create(params_to_insert)
 
         created.message = (
             f"Game with gameId: {new_game_id} duplicated successfully "
@@ -539,14 +623,17 @@ class GameService(BaseService):
         params = schema.params
         del schema.params
         updated_params = []
-        if params:
-            for param in params:
-                await self.game_params_repository.patch_game_params_by_id(
-                    param.id, param
-                )
-                updated_params.append(param)
+        async with self.response_cache.invalidating(
+            GAMES_LIST, game_definition_entity(gameId)
+        ):
+            if params:
+                for param in params:
+                    await self.game_params_repository.patch_game_params_by_id(
+                        param.id, param
+                    )
+                    updated_params.append(param)
 
-        game = await self.game_repository.patch_game_by_id(gameId, schema)
+            game = await self.game_repository.patch_game_by_id(gameId, schema)
         game_dict = game.model_dump()
         response = ResponsePatchGame(
             externalGameId=game_dict["externalGameId"],
@@ -600,21 +687,29 @@ class GameService(BaseService):
         Returns:
             dict: The strategy details.
         """
-        if enforce_scope:
-            game = await get_authorized_game(
-                self.game_repository,
-                gameId,
-                api_key=api_key,
-                oauth_user_id=oauth_user_id,
-                is_admin=is_admin,
-            )
-        else:
-            game = await self.game_repository.read_by_id(
-                gameId, not_found_raise_exception=False
-            )
-        if not game:
-            raise NotFoundError(detail=f"Game not found by gameId: {gameId}")
+        access = GameAccess(api_key, oauth_user_id, is_admin, enforce_scope)
+        return await cached_game_read(
+            self.response_cache,
+            namespace="game_strategy",
+            game_id=gameId,
+            access=access,
+            load_game=lambda: self._load_game_for_read(
+                gameId, access, f"Game not found by gameId: {gameId}"
+            ),
+            compute=lambda game: self._build_game_strategy(gameId, game),
+        )
 
+    async def _build_game_strategy(self, gameId: UUID, game: Any) -> dict[str, Any]:
+        """
+        The game's strategy with the game's params applied to its variables.
+
+        Args:
+            gameId (UUID): The game ID (for error messages).
+            game: The game row.
+
+        Returns:
+            dict: The strategy details.
+        """
         if not game.strategyId:
             raise ConflictError(
                 detail=f"Game with gameId: {gameId} does not have a strategyId"
