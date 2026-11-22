@@ -20,6 +20,7 @@ import pytest
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
+from app.model import import_all_models
 from app.model.api_requests import ApiRequests
 from app.model.game_params import GamesParams
 from app.model.games import Games
@@ -40,6 +41,12 @@ from tests.helpers.real_e2e import (
 )
 
 pytestmark = REAL_E2E_MARKS
+
+# Register every table on the ORM metadata. The models above have foreign keys
+# to tables (e.g. ``apikey``) whose models nothing in this module imports, so
+# the cleanup queries fail with NoReferencedTableError when this file runs on
+# its own.
+import_all_models()
 
 # Ahead of UTC, so a local day starts on the previous UTC day.
 GAME_TIMEZONE = "Asia/Kolkata"
@@ -250,33 +257,26 @@ def streak_e2e(real_e2e_config: RealE2EConfig, postgres_engine: Engine):
             games[name] = str(game["gameId"])
             game_ids.append(games[name])
 
-        for game_id, external_task_id in (
-            (games["main"], "daily_streak"),
-            (games["main"], "video_view"),
-            (games["other"], "daily_streak"),
+        custom_strategy_id = f"custom:{strategy['id']}"
+        for game_id, external_task_id, strategy_id in (
+            (games["main"], "daily_streak", custom_strategy_id),
+            (games["main"], "video_view", "default"),
+            (games["other"], "daily_streak", "default"),
         ):
             _ok(
                 post(
                     f"/games/{game_id}/tasks",
-                    {"externalTaskId": external_task_id, "strategyId": "default"},
+                    {"externalTaskId": external_task_id, "strategyId": strategy_id},
                 )
             )
 
         with Session(postgres_engine) as session:
             rows = session.query(Tasks).filter(Tasks.gameId.in_(game_ids)).all()
             task_ids = {(str(t.gameId), t.externalTaskId): t.id for t in rows}
+            strategies = {t.id: t.strategyId for t in rows}
 
-        # Task creation only accepts built-in strategies, so the custom one
-        # is assigned with PATCH (which validates custom ids).
         main_daily = task_ids[(games["main"], "daily_streak")]
-        _ok(
-            httpx.patch(
-                f"{base}/games/{games['main']}/tasks/{main_daily}",
-                json={"strategyId": f"custom:{strategy['id']}"},
-                headers=auth,
-                timeout=30.0,
-            )
-        )
+        assert strategies[main_daily] == custom_strategy_id
 
         yield StreakE2E(
             base_url=base,
