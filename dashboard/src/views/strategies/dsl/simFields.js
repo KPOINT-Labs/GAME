@@ -23,6 +23,9 @@ export const ACCUMULATION_FIELD_META = [
   { path: 'all.avg_time', kind: 'seconds', default: 0, step: 0 },
   { path: 'user.last_window_diff', kind: 'seconds', default: 0, step: 0 },
   { path: 'user.new_last_window_diff', kind: 'seconds', default: 0, step: 0 },
+  // Counts today, so it is at least 1; repeat submissions on the same day
+  // don't change it, hence no per-submission step.
+  { path: 'user.streak_days', kind: 'days', default: 1, step: 0 },
 ]
 
 export const ACCUMULATION_FIELD_PATHS = ACCUMULATION_FIELD_META.map((m) => m.path)

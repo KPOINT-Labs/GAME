@@ -137,7 +137,8 @@
       "user.avg_time": "Tiempo promedio del usuario entre tareas (s)",
       "all.avg_time": "Tiempo promedio de todos los usuarios (s)",
       "user.last_window_diff": "Diferencia de tiempo vs. última ventana (s)",
-      "user.new_last_window_diff": "Nueva diferencia de tiempo vs. última ventana (s)"
+      "user.new_last_window_diff": "Nueva diferencia de tiempo vs. última ventana (s)",
+      "user.streak_days": "Racha de días activos consecutivos del usuario (incl. hoy)"
     },
     "advanced": "Avanzado: editar overrides JSON",
     "mockState": "Valores simulados de campos (JSON)",

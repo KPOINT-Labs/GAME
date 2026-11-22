@@ -61,3 +61,23 @@ def local_datetime(timestamp: datetime.datetime, zone: ZoneInfo) -> datetime.dat
 def local_now(zone: ZoneInfo) -> datetime.datetime:
     """The current time in ``zone``."""
     return datetime.datetime.now(zone)
+
+
+def utc_bounds_of_local_days(
+    zone: ZoneInfo, first_day: datetime.date, last_day: datetime.date
+) -> tuple[datetime.datetime, datetime.datetime]:
+    """
+    UTC instants covering the local days ``first_day..last_day`` in ``zone``.
+
+    Returns:
+        tuple[datetime, datetime]: ``(start, end)``; ``start`` is inclusive
+        (local midnight of ``first_day``) and ``end`` exclusive (local
+        midnight after ``last_day``).
+    """
+    start = datetime.datetime.combine(first_day, datetime.time.min, tzinfo=zone)
+    end = datetime.datetime.combine(
+        last_day + datetime.timedelta(days=1), datetime.time.min, tzinfo=zone
+    )
+    return start.astimezone(datetime.timezone.utc), end.astimezone(
+        datetime.timezone.utc
+    )

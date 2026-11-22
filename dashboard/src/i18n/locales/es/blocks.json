@@ -99,6 +99,10 @@
       "label": "Mediciones recientes",
       "desc": "Envíos del usuario en los últimos 5 minutos (ventana móvil)."
     },
+    "user.streak_days": {
+      "label": "Días de racha",
+      "desc": "Días consecutivos en que el usuario obtuvo puntos en este juego (cualquier tarea, zona horaria del juego), incluido hoy. Como mínimo 1."
+    },
     "parent.points": {
       "label": "Puntos del padre",
       "desc": "Puntos calculados por la estrategia padre (solo en reglas POST)."
