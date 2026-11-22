@@ -112,15 +112,136 @@ walkthrough. Operational notes:
   uses the same endpoint until the API image tag is bumped to a build that
   includes ``GET /api/v1/kpi/ready`` (requires the database); then switch the
   readiness probe to it. Postgres has ``pg_isready`` probes.
-* The Postgres image is **pinned** to the major version of the existing data
-  (``postgres:18-alpine``; Docker Compose uses 16 for fresh volumes). Upgrade
-  major versions deliberately (``pg_upgrade`` or dump/restore); an unpinned
-  tag can pull a new major on restart that cannot open the existing data
-  directory.
+* **Postgres** runs as a highly available CloudNativePG cluster
+  (``kubernetes/cnpg/``, ``deploy-kubernetes.sh --cnpg``); see
+  `High availability (CloudNativePG)`_. The single-instance Deployment
+  (``--postgres``) has no failover; use it only outside production.
+  Development (Docker Compose) and tests use a single Postgres instance.
+* Postgres images are **pinned** to the major version of the existing data
+  (18; Docker Compose uses 16 for fresh volumes). Upgrade major versions
+  deliberately (``pg_upgrade`` or dump/restore); an unpinned tag can pull a
+  new major on restart that cannot open the existing data directory.
 * Provide configuration via ``ConfigMap`` (non-secret) and ``Secret``
   (``SECRET_KEY``, DB password, ``KEYCLOAK_CLIENT_SECRET``).
 * Roll back with ``kubectl rollout undo deployment/<name>`` - Kubernetes keeps
   the deployment history.
+
+High availability (CloudNativePG)
+=================================
+
+Production Postgres is a CloudNativePG ``Cluster``
+(``kubernetes/cnpg/postgres-cluster.yaml``; decision record
+:doc:`decisions/0014-postgres-ha-cloudnativepg`):
+
+* **Three instances** (``GAMIFICATIONENGINE_CNPG_INSTANCES``): one primary
+  and two streaming replicas, spread over nodes (preferred pod
+  anti-affinity, so it still schedules on fewer nodes, without the node-loss
+  protection). With nodes in several zones, set ``topologyKey`` to
+  ``topology.kubernetes.io/zone``.
+* **Automatic failover**: when the primary's pod or node fails, the operator
+  promotes the most advanced replica and repoints the ``<cluster>-rw``
+  Service. The API connects to ``<cluster>-rw``; during a failover it
+  answers ``503`` with ``Retry-After`` (see `Database outages`_) and
+  reconnects on its own once the new primary is up.
+* **Synchronous replication** (``method: any``, ``number: 1``): a commit is
+  acknowledged only once a replica has it too, so a failover loses no
+  acknowledged write. With ``dataDurability: preferred``, writes continue
+  asynchronously if no replica is healthy (availability over zero data loss
+  in that double failure).
+* **Rolling updates** (minor image versions, parameters, resources) restart
+  replicas first and then switch over, so the primary changes once.
+* Each instance has a data volume (``GAMIFICATIONENGINE_CNPG_STORAGE_SIZE``)
+  and a WAL volume (``GAMIFICATIONENGINE_CNPG_WAL_STORAGE_SIZE``) from the
+  default StorageClass. Volumes can grow (edit the size and re-apply) but
+  never shrink, and the WAL volume cannot be added or removed later.
+
+Day-to-day commands (the optional ``kubectl cnpg`` plugin gives a richer
+view):
+
+.. code-block:: bash
+
+   kubectl -n $NS get cluster game-db             # phase, instances, primary
+   kubectl -n $NS get pods -l cnpg.io/cluster=game-db -L role
+   kubectl cnpg -n $NS status game-db             # replication lag, sync state
+   kubectl cnpg -n $NS promote game-db game-db-2  # planned switchover
+
+Before draining a node that runs the primary, switch over to a replica on
+another node, so the drain causes one brief switchover instead of waiting on
+the primary's disruption budget.
+
+Installing the operator
+-----------------------
+
+Once per Kubernetes cluster, by someone with cluster-admin rights (installs
+CRDs and the controller into ``cnpg-system``):
+
+.. code-block:: bash
+
+   kubectl apply --server-side -f \
+     https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.30/releases/cnpg-1.30.2.yaml
+   kubectl rollout status deployment -n cnpg-system cnpg-controller-manager
+
+Creating the cluster
+--------------------
+
+**Before you start**
+
+* ``GAMIFICATIONENGINE_DB_USER`` must not be ``postgres`` or
+  ``streaming_replica`` (reserved by CloudNativePG).
+* At least three schedulable nodes, for the anti-affinity to protect against
+  node loss.
+* Choose ``GAMIFICATIONENGINE_CNPG_STORAGE_SIZE`` and
+  ``GAMIFICATIONENGINE_CNPG_WAL_STORAGE_SIZE`` (per instance; the WAL volume
+  is fixed at creation).
+
+**Steps**
+
+1. Install the operator (above).
+2. In ``.env`` set ``GAMIFICATIONENGINE_DB_HOST=game-db-rw`` and the same host
+   in ``GAMIFICATIONENGINE_DATABASE_URL``.
+3. Create the cluster and wait for it:
+
+   .. code-block:: bash
+
+      ./deploy-kubernetes.sh --cnpg
+      kubectl -n $NS wait --for=condition=Ready cluster/game-db --timeout=15m
+
+4. Deploy the API: ``./deploy-kubernetes.sh --api``. It runs
+   ``alembic upgrade head`` on start-up, creating the schema.
+5. Before taking traffic, test a failover: delete the primary pod while
+   sending requests, and check that a replica takes over and the API recovers
+   after a few ``503`` responses.
+
+   .. code-block:: bash
+
+      kubectl -n $NS delete pod "$(kubectl -n $NS get cluster game-db -o jsonpath='{.status.currentPrimary}')"
+      kubectl -n $NS get cluster game-db -w
+
+Importing an existing database (optional)
+-----------------------------------------
+
+Not needed for a fresh install. To copy the application database from a
+single-instance Postgres (the ``--postgres`` Deployment) into the cluster,
+``scripts/cnpg-import-legacy.sh`` runs a one-off pod from the cluster's own
+image that streams ``pg_dump`` into ``<cluster>-rw`` (``pg_restore`` in one
+transaction, objects owned by the API's user), runs ``ANALYZE`` and compares
+the row count of every table. Passwords travel on the pod's stdin, not in its
+spec.
+
+.. code-block:: bash
+
+   kubectl -n $NS scale deployment/gamificationengine --replicas=0  # stop writes
+   scripts/cnpg-import-legacy.sh --replace
+   kubectl -n $NS scale deployment/gamificationengine --replicas=1
+
+* The source defaults to the ``GAMIFICATIONENGINE_SERVICE_NAME_POSTGRES``
+  Service with the same database name and credentials as the cluster;
+  override with ``LEGACY_DB_HOST``, ``LEGACY_DB_PORT``, ``LEGACY_DB_NAME``,
+  ``LEGACY_DB_USER`` and ``LEGACY_DB_PASSWORD``. The source's major version
+  must not be newer than the cluster's.
+* The target must have no tables. ``--replace`` drops its ``public`` schema
+  first, for example the empty schema the API's migrations created. On any
+  error nothing is committed, and the script fails if row counts differ.
 
 Database migrations (Alembic)
 =============================
@@ -174,7 +295,12 @@ What happens when PostgreSQL is stopped, crashes or becomes unreachable:
   first request may get one retryable ``503``.
 * **Restarts**: in Docker Compose, ``api`` and ``postgres`` restart unless
   stopped, and ``api`` starts only once Postgres passes its ``pg_isready``
-  healthcheck. In Kubernetes both use ``restartPolicy: Always``.
+  healthcheck. In Kubernetes both use ``restartPolicy: Always``, and a
+  failed Postgres primary is replaced by a replica (see
+  `High availability (CloudNativePG)`_).
+* **Failover**: connections to an old primary fail as it shuts down or turns
+  read-only; those errors are outages too (``503``, pool reset), so the next
+  request connects to the new primary.
 * **No acknowledged write is lost**: each award writes the points row, the
   wallet balance and the wallet transaction in one database transaction, and
   Postgres flushes its write-ahead log before acknowledging a commit (the

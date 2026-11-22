@@ -22,7 +22,9 @@ show_help() {
     echo "Apply Kubernetes YAML files for specific components."
     echo ""
     echo "Options:"
-    echo "  --postgres  Apply only the PostgreSQL deployment and its dependencies."
+    echo "  --postgres  Apply the single-instance PostgreSQL deployment (no failover; non-production)."
+    echo "  --cnpg      Apply the highly available PostgreSQL cluster (CloudNativePG;"
+    echo "              the operator must be installed first)."
     echo "  --api       Apply only the API deployment and its dependencies."
     echo "  --verbose   Display verbose output."
     echo "  --help      Display this help message."
@@ -67,6 +69,11 @@ POSTGRES_FILES=(
     "kubernetes/deployments/postgres-deployment.yaml"
 )
 
+CNPG_FILES=(
+    "kubernetes/cnpg/postgres-cluster-secrets.yaml"
+    "kubernetes/cnpg/postgres-cluster.yaml"
+)
+
 API_FILES=(
     "kubernetes/configmaps/env-prod-configmap.yaml"
     "kubernetes/services/gamificationengine-service.yaml"
@@ -80,6 +87,12 @@ INGRESS=(
 
 if [ "$1" = "--postgres" ]; then
     FILES=("${POSTGRES_FILES[@]}")
+elif [ "$1" = "--cnpg" ]; then
+    if ! kubectl get crd clusters.postgresql.cnpg.io >/dev/null 2>&1; then
+        echo -e "${RED}[-] Error: the CloudNativePG operator is not installed (no clusters.postgresql.cnpg.io CRD). See docs/source/operations.rst.${NC}"
+        exit 1
+    fi
+    FILES=("${CNPG_FILES[@]}")
 elif [ "$1" = "--api" ]; then
     FILES=("${API_FILES[@]}")
 elif [ "$1" = "--ingress" ]; then
