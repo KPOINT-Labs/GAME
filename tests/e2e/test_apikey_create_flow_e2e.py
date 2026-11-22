@@ -6,7 +6,6 @@ from dataclasses import dataclass
 import httpx
 import jwt
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -14,29 +13,14 @@ from app.model.api_key import ApiKey
 from app.model.logs import Logs
 from app.model.oauth_users import OAuthUsers
 from app.util.generate_api_key import extract_prefix, hash_api_key
+from tests.helpers.real_e2e import (
+    REAL_E2E_MARKS,
+    RealE2EConfig,
+    fetch_keycloak_access_token,
+    optional_env,
+)
 
-pytestmark = [
-    pytest.mark.e2e_real_http,
-    pytest.mark.skipif(
-        os.getenv("RUN_REAL_E2E", "0") != "1",
-        reason=(
-            "Set RUN_REAL_E2E=1 and configure E2E environment variables "
-            "to run real HTTP + PostgreSQL end-to-end tests."
-        ),
-    ),
-]
-
-
-@dataclass(frozen=True)
-class RealE2EConfig:
-    base_url: str
-    database_url: str
-    keycloak_url: str
-    keycloak_realm: str
-    keycloak_client_id: str
-    keycloak_client_secret: str
-    admin_username: str
-    admin_password: str
+pytestmark = REAL_E2E_MARKS
 
 
 @dataclass(frozen=True)
@@ -47,45 +31,6 @@ class ApiKeyCreateE2EContext:
     bootstrap_api_key: str
     client_prefix: str
     created_oauth_user: bool
-
-
-def _require_env(name: str, fallback: str | None = None) -> str:
-    value = os.getenv(name)
-    if value is None or value.strip() == "":
-        if fallback is None:
-            raise KeyError(name)
-        return fallback
-    return value
-
-
-def _fetch_keycloak_access_token(
-    *,
-    keycloak_url: str,
-    realm: str,
-    client_id: str,
-    client_secret: str,
-    username: str,
-    password: str,
-) -> str:
-    token_url = (
-        f"{keycloak_url.rstrip('/')}/realms/{realm}/protocol/openid-connect/token"
-    )
-    payload = {
-        "grant_type": "password",
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "username": username,
-        "password": password,
-    }
-    response = httpx.post(token_url, data=payload, timeout=30.0)
-    assert response.status_code == 200, (
-        f"Unable to obtain Keycloak token from {token_url}. "
-        f"status={response.status_code}, body={response.text}"
-    )
-    body = response.json()
-    access_token = body.get("access_token")
-    assert access_token, f"Keycloak token response missing access_token: {body}"
-    return access_token
 
 
 def _decode_subject_without_verification(access_token: str) -> str:
@@ -133,84 +78,12 @@ def _count_apikeys_by_prefix(session: Session, client_prefix: str) -> int:
     return session.query(ApiKey).filter(ApiKey.client.like(f"{client_prefix}%")).count()
 
 
-def _optional_env(name: str, fallback: str | None = None) -> str | None:
-    value = os.getenv(name)
-    if value is None or value.strip() == "":
-        return fallback
-    return value
-
-
-@pytest.fixture(scope="session")
-def real_e2e_config() -> RealE2EConfig:
-    try:
-        database_url = _require_env("E2E_DATABASE_URL", os.getenv("DATABASE_URL"))
-        keycloak_url = _require_env(
-            "E2E_KEYCLOAK_URL",
-            os.getenv("KEYCLOAK_URL", "http://localhost:8080"),
-        )
-        keycloak_realm = _require_env(
-            "E2E_KEYCLOAK_REALM",
-            os.getenv("KEYCLOAK_REALM"),
-        )
-        keycloak_client_id = _require_env(
-            "E2E_KEYCLOAK_CLIENT_ID",
-            os.getenv("KEYCLOAK_CLIENT_ID"),
-        )
-        keycloak_client_secret = _require_env(
-            "E2E_KEYCLOAK_CLIENT_SECRET",
-            os.getenv("KEYCLOAK_CLIENT_SECRET"),
-        )
-        admin_username = _require_env(
-            "E2E_KEYCLOAK_ADMIN_USERNAME",
-            os.getenv("KEYCLOAK_ADMIN_USERNAME", "game_admin@example.com"),
-        )
-        admin_password = _require_env(
-            "E2E_KEYCLOAK_ADMIN_PASSWORD",
-            os.getenv("KEYCLOAK_USER_WITH_ROLE_PASSWORD"),
-        )
-    except KeyError as exc:
-        missing_name = str(exc).strip("'")
-        pytest.fail(
-            "RUN_REAL_E2E=1 requires environment variable "
-            f"`{missing_name}` (or its documented fallback).",
-            pytrace=False,
-        )
-        raise
-
-    if not database_url.startswith("postgresql"):
-        pytest.fail(
-            "E2E_DATABASE_URL / DATABASE_URL must point to PostgreSQL "
-            f"(received: {database_url})",
-            pytrace=False,
-        )
-
-    return RealE2EConfig(
-        base_url=os.getenv("E2E_BASE_URL", "http://localhost:8000/api/v1"),
-        database_url=database_url,
-        keycloak_url=keycloak_url,
-        keycloak_realm=keycloak_realm,
-        keycloak_client_id=keycloak_client_id,
-        keycloak_client_secret=keycloak_client_secret,
-        admin_username=admin_username,
-        admin_password=admin_password,
-    )
-
-
-@pytest.fixture(scope="session")
-def postgres_engine(real_e2e_config: RealE2EConfig) -> Engine:
-    engine = create_engine(real_e2e_config.database_url, future=True)
-    try:
-        yield engine
-    finally:
-        engine.dispose()
-
-
 @pytest.fixture
 def apikey_create_context(
     real_e2e_config: RealE2EConfig,
     postgres_engine: Engine,
 ) -> ApiKeyCreateE2EContext:
-    admin_bearer_token = _fetch_keycloak_access_token(
+    admin_bearer_token = fetch_keycloak_access_token(
         keycloak_url=real_e2e_config.keycloak_url,
         realm=real_e2e_config.keycloak_realm,
         client_id=real_e2e_config.keycloak_client_id,
@@ -288,11 +161,11 @@ def apikey_create_context(
 
 @pytest.fixture
 def non_admin_bearer_token(real_e2e_config: RealE2EConfig) -> str:
-    username = _optional_env(
+    username = optional_env(
         "E2E_KEYCLOAK_NON_ADMIN_USERNAME",
         os.getenv("KEYCLOAK_USER_NO_ROLE_USERNAME", "game_user@example.com"),
     )
-    password = _optional_env(
+    password = optional_env(
         "E2E_KEYCLOAK_NON_ADMIN_PASSWORD",
         os.getenv("KEYCLOAK_USER_NO_ROLE_PASSWORD"),
     )
@@ -302,7 +175,7 @@ def non_admin_bearer_token(real_e2e_config: RealE2EConfig) -> str:
             "E2E_KEYCLOAK_NON_ADMIN_PASSWORD to validate role-based rejection."
         )
 
-    return _fetch_keycloak_access_token(
+    return fetch_keycloak_access_token(
         keycloak_url=real_e2e_config.keycloak_url,
         realm=real_e2e_config.keycloak_realm,
         client_id=real_e2e_config.keycloak_client_id,

@@ -9,11 +9,15 @@ import pytest
 import pytest_asyncio
 from dependency_injector import providers
 from httpx import AsyncClient
+from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import JSONB as PG_JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.ext.compiler import compiles
 from sqlmodel import SQLModel
+
+from tests.helpers.real_e2e import RealE2EConfig, load_real_e2e_config
 
 
 @compiles(PG_UUID, "sqlite")
@@ -195,3 +199,17 @@ async def e2e_context(tmp_path: Path, request: pytest.FixtureRequest, e2e_runtim
 async def e2e_client(e2e_context: E2EContext):
     async with AsyncClient(app=e2e_context.app, base_url="http://testserver") as client:
         yield client
+
+
+@pytest.fixture(scope="session")
+def real_e2e_config() -> RealE2EConfig:
+    return load_real_e2e_config()
+
+
+@pytest.fixture(scope="session")
+def postgres_engine(real_e2e_config: RealE2EConfig) -> Engine:
+    engine = create_engine(real_e2e_config.database_url, future=True)
+    try:
+        yield engine
+    finally:
+        engine.dispose()
