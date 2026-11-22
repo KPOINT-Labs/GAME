@@ -1,0 +1,75 @@
+# Highly available PostgreSQL, managed by the CloudNativePG operator
+# (https://cloudnative-pg.io, operator 1.30.x installed cluster-wide; see
+# docs/source/operations.rst "High availability (CloudNativePG)").
+#
+# One primary plus streaming replicas on different nodes. If the primary's
+# pod or node fails, the operator promotes the most up-to-date replica and
+# repoints the "<name>-rw" Service at it, usually within tens of seconds.
+# The API connects to "<name>-rw" (GAMIFICATIONENGINE_DB_HOST).
+#
+# Rendered with envsubst by deploy-kubernetes.sh --cnpg.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: ${GAMIFICATIONENGINE_CNPG_CLUSTER_NAME}
+spec:
+  instances: ${GAMIFICATIONENGINE_CNPG_INSTANCES}
+
+  # PostgreSQL 18. "minimal" carries no in-image backup tools: backups will
+  # use the Barman Cloud plugin. Change minor versions freely (rolling
+  # update); never change the major version here without a plan.
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.7-minimal-trixie
+
+  # Rolling updates restart replicas first, then switch over to a replica
+  # instead of restarting the primary in place.
+  primaryUpdateStrategy: unsupervised
+  primaryUpdateMethod: switchover
+
+  postgresql:
+    # Every commit is confirmed by at least one replica before it is
+    # acknowledged. failoverQuorum promotes a replica only when it is sure to
+    # hold every acknowledged commit: if the primary and a replica fail
+    # together, the last replica is NOT promoted automatically (it may lack
+    # commits only the lost replica had); promote it by hand as a last
+    # resort. "preferred" keeps writes flowing (asynchronously) when no
+    # replica is healthy, favouring availability in that double failure.
+    synchronous:
+      method: any
+      number: 1
+      dataDurability: preferred
+      failoverQuorum: true
+    parameters:
+      shared_buffers: "512MB"
+
+  # Spread instances over nodes. "preferred" still schedules when there are
+  # fewer nodes than instances; with nodes in several zones, use
+  # topology.kubernetes.io/zone to survive a zone outage.
+  affinity:
+    enablePodAntiAffinity: true
+    podAntiAffinityType: preferred
+    topologyKey: kubernetes.io/hostname
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: 2Gi
+    limits:
+      memory: 2Gi
+
+  # Per instance, from the cluster's default StorageClass. Volumes can grow
+  # later (edit and re-apply) but never shrink.
+  storage:
+    size: ${GAMIFICATIONENGINE_CNPG_STORAGE_SIZE}
+  # WAL on its own volume (cannot be added after creation).
+  walStorage:
+    size: ${GAMIFICATIONENGINE_CNPG_WAL_STORAGE_SIZE}
+
+  # Used once, when the Cluster is created: an empty application database
+  # owned by the API's user, with the password from the Secret. The API runs
+  # the Alembic migrations on start-up. Ignored on later applies.
+  bootstrap:
+    initdb:
+      database: ${GAMIFICATIONENGINE_DB_NAME}
+      owner: ${GAMIFICATIONENGINE_DB_USER}
+      secret:
+        name: ${GAMIFICATIONENGINE_CNPG_CLUSTER_NAME}-app-owner

@@ -22,7 +22,9 @@ show_help() {
     echo "Apply Kubernetes YAML files for specific components."
     echo ""
     echo "Options:"
-    echo "  --postgres  Apply only the PostgreSQL deployment and its dependencies."
+    echo "  --postgres  Apply the single-instance PostgreSQL deployment (no failover; non-production)."
+    echo "  --cnpg      Apply the highly available PostgreSQL cluster (CloudNativePG;"
+    echo "              the operator must be installed first)."
     echo "  --api       Apply only the API deployment and its dependencies."
     echo "  --verbose   Display verbose output."
     echo "  --help      Display this help message."
@@ -44,14 +46,16 @@ apply_yaml() {
         echo -e "${YELLOW}Executing command: kubectl --namespace $NAMESPACE apply -f $TEMP_FILE${NC}"
     fi
     kubectl --namespace $NAMESPACE apply -f $TEMP_FILE
+    local status=$?
 
-    if [ $? -eq 0 ]; then
+    if [ $status -eq 0 ]; then
         echo -e "${GREEN}[+] Success: The resource $TEMP_FILE has been successfully applied to the namespace $NAMESPACE.${NC}"
     else
         echo -e "${RED}[-] Error: Failed to apply the resource $TEMP_FILE to the namespace $NAMESPACE.${NC}"
     fi
 
     rm $TEMP_FILE
+    return $status
 }
 
 for arg in "$@"; do
@@ -67,6 +71,11 @@ POSTGRES_FILES=(
     "kubernetes/deployments/postgres-deployment.yaml"
 )
 
+CNPG_FILES=(
+    "kubernetes/cnpg/postgres-cluster-secrets.yaml"
+    "kubernetes/cnpg/postgres-cluster.yaml"
+)
+
 API_FILES=(
     "kubernetes/configmaps/env-prod-configmap.yaml"
     "kubernetes/services/gamificationengine-service.yaml"
@@ -80,6 +89,12 @@ INGRESS=(
 
 if [ "$1" = "--postgres" ]; then
     FILES=("${POSTGRES_FILES[@]}")
+elif [ "$1" = "--cnpg" ]; then
+    if ! kubectl get crd clusters.postgresql.cnpg.io >/dev/null 2>&1; then
+        echo -e "${RED}[-] Error: the CloudNativePG operator is not installed (no clusters.postgresql.cnpg.io CRD). See docs/source/operations.rst.${NC}"
+        exit 1
+    fi
+    FILES=("${CNPG_FILES[@]}")
 elif [ "$1" = "--api" ]; then
     FILES=("${API_FILES[@]}")
 elif [ "$1" = "--ingress" ]; then
@@ -89,8 +104,13 @@ else
     exit 1
 fi
 
+FAILED=0
 for FILE in "${FILES[@]}"; do
-    apply_yaml $FILE $2 # $2 can be --verbose
+    apply_yaml $FILE $2 || FAILED=1 # $2 can be --verbose
 done
 
+if [ "$FAILED" -ne 0 ]; then
+    echo -e "${RED}[-] Error: one or more resources failed to apply.${NC}"
+    exit 1
+fi
 echo -e "${BLUE}[*] Info: Process completed.${NC}"

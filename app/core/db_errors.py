@@ -20,6 +20,13 @@ try:  # asyncpg is the production driver; absent in some test setups.
         _apg.TooManyConnectionsError,
         _apg.ConnectionFailureError,
         _apg.InterfaceError,
+        # Failover / switchover (CloudNativePG): the old primary terminates
+        # sessions as it shuts down, or is briefly read-only while it is
+        # demoted. Discarding the pool reconnects through the ``-rw``
+        # Service, which then points at the new primary.
+        _apg.AdminShutdownError,  # 57P01
+        _apg.CrashShutdownError,  # 57P02
+        _apg.ReadOnlySQLTransactionError,  # 25006
     )
 except ImportError:  # pragma: no cover
     _ASYNCPG_UNAVAILABLE = ()
@@ -73,7 +80,9 @@ def is_database_unavailable(exc: BaseException) -> bool:
     """
     Whether ``exc`` (or anything in its chain) means the database cannot be
     reached: connection refused/closed/reset, pool exhausted, server not
-    accepting connections, or a connect/query timeout raised by the driver.
+    accepting connections or shutting down, a connection to a primary that
+    has become read-only (failover), or a connect/query timeout raised by the
+    driver.
 
     Timeouts and OS errors raised elsewhere (for example by an HTTP client)
     do not count, so unrelated failures still surface as ``500``.

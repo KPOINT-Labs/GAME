@@ -45,6 +45,27 @@ def test_asyncpg_connection_errors_are_recognised():
     assert is_database_unavailable(apg.CannotConnectNowError("starting up"))
 
 
+def test_failover_errors_are_recognised():
+    """An old primary shutting down or demoted to read-only during a
+    CloudNativePG failover/switchover answers 503 and resets the pool."""
+    import asyncpg.exceptions as apg
+
+    assert is_database_unavailable(apg.AdminShutdownError("terminating connection"))
+    assert is_database_unavailable(apg.CrashShutdownError("crash of another backend"))
+    assert is_database_unavailable(
+        apg.ReadOnlySQLTransactionError("cannot execute INSERT in a read-only txn")
+    )
+    wrapped = sa_exc.DBAPIError("INSERT", {}, Exception("adapter error"))
+    wrapped.orig.__cause__ = apg.ReadOnlySQLTransactionError("read-only")
+    assert is_database_unavailable(wrapped)
+
+
+def test_query_cancellation_is_not_an_outage():
+    import asyncpg.exceptions as apg
+
+    assert not is_database_unavailable(apg.QueryCanceledError("statement timeout"))
+
+
 @pytest.mark.parametrize(
     "exc",
     [
