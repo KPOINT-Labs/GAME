@@ -41,13 +41,14 @@ spec:
     parameters:
       shared_buffers: "512MB"
 
-  # Spread instances over nodes. "preferred" still schedules when there are
-  # fewer nodes than instances; with nodes in several zones, use
-  # topology.kubernetes.io/zone to survive a zone outage.
+  # Spread instances over nodes (kubernetes.io/hostname) or, on AWS, over
+  # availability zones (topology.kubernetes.io/zone) to survive a zone
+  # outage. "preferred" still schedules when there are fewer nodes/zones
+  # than instances.
   affinity:
     enablePodAntiAffinity: true
     podAntiAffinityType: preferred
-    topologyKey: kubernetes.io/hostname
+    topologyKey: ${GAMIFICATIONENGINE_CNPG_TOPOLOGY_KEY}
 
   resources:
     requests:
@@ -56,20 +57,35 @@ spec:
     limits:
       memory: 2Gi
 
-  # Per instance, from the cluster's default StorageClass. Volumes can grow
-  # later (edit and re-apply) but never shrink.
+  # Per instance. On AWS the StorageClass is gp3-encrypted (KMS,
+  # kubernetes/aws/). Volumes can grow later (edit and re-apply) but never
+  # shrink.
   storage:
+    storageClass: ${GAMIFICATIONENGINE_CNPG_STORAGE_CLASS}
     size: ${GAMIFICATIONENGINE_CNPG_STORAGE_SIZE}
   # WAL on its own volume (cannot be added after creation).
   walStorage:
+    storageClass: ${GAMIFICATIONENGINE_CNPG_STORAGE_CLASS}
     size: ${GAMIFICATIONENGINE_CNPG_WAL_STORAGE_SIZE}
 
+  # Keep the application role's password in step with its Secret (from .env,
+  # or from AWS Secrets Manager through External Secrets), so a rotated
+  # password is applied to the database without manual SQL.
+  managed:
+    roles:
+      - name: ${GAMIFICATIONENGINE_DB_USER}
+        ensure: present
+        login: true
+        passwordSecret:
+          name: ${GAMIFICATIONENGINE_DB_CREDENTIALS_SECRET}
+
   # Used once, when the Cluster is created: an empty application database
-  # owned by the API's user, with the password from the Secret. The API runs
+  # owned by the API's user, with the password from the Secret. The
+  # Secret's username must equal GAMIFICATIONENGINE_DB_USER. The API runs
   # the Alembic migrations on start-up. Ignored on later applies.
   bootstrap:
     initdb:
       database: ${GAMIFICATIONENGINE_DB_NAME}
       owner: ${GAMIFICATIONENGINE_DB_USER}
       secret:
-        name: ${GAMIFICATIONENGINE_CNPG_CLUSTER_NAME}-app-owner
+        name: ${GAMIFICATIONENGINE_DB_CREDENTIALS_SECRET}

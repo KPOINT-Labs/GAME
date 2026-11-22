@@ -36,3 +36,4 @@ All records below are **Accepted** and describe the current behavior on
    0012-sqlite-tests-postgres-prod
    0013-strategy-entrypoint-plugins
    0014-postgres-ha-cloudnativepg
+   0015-db-credentials-secrets-manager

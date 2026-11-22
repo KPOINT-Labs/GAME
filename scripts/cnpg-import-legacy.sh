@@ -48,8 +48,15 @@ done
 NS=${GAMIFICATIONENGINE_NAMESPACE:?set GAMIFICATIONENGINE_NAMESPACE}
 CLUSTER=${GAMIFICATIONENGINE_CNPG_CLUSTER_NAME:?set GAMIFICATIONENGINE_CNPG_CLUSTER_NAME}
 DB_NAME=${GAMIFICATIONENGINE_DB_NAME:?}
+DB_SECRET=${GAMIFICATIONENGINE_DB_CREDENTIALS_SECRET:-game-db-app-credentials}
 DB_USER=${GAMIFICATIONENGINE_DB_USER:?}
-DB_PASSWORD=${GAMIFICATIONENGINE_DB_PASSWORD:?}
+DB_PASSWORD=${GAMIFICATIONENGINE_DB_PASSWORD:-}
+if [ "${GAMIFICATIONENGINE_DB_SECRETS_SOURCE:-env}" = "aws" ]; then
+    # Credentials from AWS Secrets Manager: read the synced Secret.
+    DB_PASSWORD=$(kubectl -n "${GAMIFICATIONENGINE_NAMESPACE:?}" get secret "$DB_SECRET" \
+        -o jsonpath='{.data.password}' | base64 -d)
+fi
+: "${DB_PASSWORD:?no database password (GAMIFICATIONENGINE_DB_PASSWORD, or the synced Secret when the source is aws)}"
 DB_PORT=${GAMIFICATIONENGINE_DB_PORT:-5432}
 # The cluster's own image: its client tools match the server version.
 IMAGE=$(kubectl -n "$NS" get cluster "$CLUSTER" -o jsonpath='{.spec.imageName}')
