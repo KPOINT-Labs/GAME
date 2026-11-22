@@ -54,6 +54,7 @@ const HELP_SLUGS = {
   gd_func_call: 'func-call',
   gd_assign_points: 'assign-points',
   gd_set_callback_data: 'set-callback-data',
+  gd_add_bonus: 'add-bonus',
   gd_pre_rule: 'pre-rule',
   gd_post_rule: 'post-rule',
   gd_set_data: 'set-data',
@@ -88,6 +89,7 @@ const FALLBACK_LABELS = {
   assignPoints: 'asignar puntos',
   case: 'caso',
   setCallback: 'guardar dato',
+  addBonus: 'sumar bono',
   equals: '=',
   preWhen: 'PRE - cuando',
   postWhen: 'POST - cuando',
@@ -616,6 +618,26 @@ export function registerDslBlocks(tFn) {
     },
   }
 
+  // gd_add_bonus
+  // Adds a named bonus on top of the base points of the assign_points
+  // that ends the run. Chainable (does not halt) so it can sit before
+  // assign_points in the same rule, or alone in an earlier rule. Each key
+  // becomes a component of the award's points breakdown.
+  Blockly.Blocks.gd_add_bonus = {
+    init() {
+      this.appendDummyInput()
+        .appendField(label('addBonus'))
+        .appendField(new Blockly.FieldTextInput('bonus'), 'KEY')
+      this.appendValueInput('VALUE').setCheck('Number').appendField(label('equals'))
+      this.setInputsInline(true)
+      this.setPreviousStatement(true, 'Statement')
+      this.setNextStatement(true, 'Statement')
+      this.setColour(60)
+      this.setTooltip(tooltip('gd_add_bonus'))
+      this.setHelpUrl(HELP_URLS.gd_add_bonus)
+    },
+  }
+
   // DSL_EXTEND blocks. These only appear in the toolbox when
   // the editor is in "Extender existente" mode. The generator routes
   // top-level gd_pre_rule / gd_post_rule into program.pre_rules /
@@ -758,7 +780,11 @@ const TOOLBOX_CATEGORIES_FULL = [
   { key: 'fields', colour: 290, blocks: ['gd_field', 'gd_field_data'] },
   { key: 'calc', colour: 230, blocks: ['gd_arith', 'gd_func_call'] },
   { key: 'values', colour: 330, blocks: ['gd_literal_number', 'gd_literal_text'] },
-  { key: 'assign', colour: 60, blocks: ['gd_assign_points', 'gd_set_callback_data'] },
+  {
+    key: 'assign',
+    colour: 60,
+    blocks: ['gd_assign_points', 'gd_add_bonus', 'gd_set_callback_data'],
+  },
 ]
 
 const TOOLBOX_CATEGORIES_EXTEND = [

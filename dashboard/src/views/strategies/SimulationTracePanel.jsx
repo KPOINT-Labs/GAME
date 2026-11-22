@@ -9,7 +9,7 @@
 // ("Disparó"). The AST is the one simulated (handleSimulate stores it
 // alongside the result), so node ids line up 1:1 with the trace.
 
-import React from 'react'
+import React, { createContext, useContext } from 'react'
 import PropTypes from 'prop-types'
 import { useTranslation } from 'react-i18next'
 import { CBadge } from '@coreui/react'
@@ -116,7 +116,13 @@ function ConditionNode({ node, byId, t }) {
 // One executed/skipped statement inside a branch. ``decisiveId`` is the
 // nodeId of the statement that set the final points (assign_points/veto),
 // which we highlight as the outcome of the whole run.
+// Whether any add_bonus ran in this simulation. When one did, the
+// assign_points value is only the base of the award, so it is labelled as
+// such. A context avoids threading the flag through every rule component.
+const BonusRunContext = createContext(false)
+
 function StatementNode({ node, byId, t, decisiveId }) {
+  const bonusRan = useContext(BonusRunContext)
   if (!node) return null
   const entry = byId.get(node.id)
   const executed = entry !== undefined
@@ -125,9 +131,15 @@ function StatementNode({ node, byId, t, decisiveId }) {
   let detail
   switch (node.type) {
     case 'assign_points':
-      detail = t('simulate.tree.assignPoints', {
+      detail = t(bonusRan ? 'simulate.tree.assignBasePoints' : 'simulate.tree.assignPoints', {
         points: executed ? entry.value : exprToText(node.value),
         caseName: node.case_name,
+      })
+      break
+    case 'add_bonus':
+      detail = t('simulate.tree.addBonus', {
+        key: node.key,
+        value: executed ? entry.value : exprToText(node.value),
       })
       break
     case 'veto':
@@ -314,6 +326,7 @@ export default function SimulationTracePanel({ ast, trace }) {
     (e) => e && ((e.type === 'assign_points' && e.branch === 'match') || e.type === 'veto'),
   )
   const decisiveId = decisive ? decisive.nodeId : null
+  const bonusRan = trace.some((e) => e && e.type === 'add_bonus')
 
   const rules = Array.isArray(ast.rules) ? ast.rules : []
   const preRules = Array.isArray(ast.pre_rules) ? ast.pre_rules : []
@@ -346,38 +359,40 @@ export default function SimulationTracePanel({ ast, trace }) {
   const defaultEntry = ast.default ? byId.get(ast.default.id) : undefined
 
   return (
-    <div>
-      {preRules.length > 0 && (
-        <>
-          <div className="small fw-semibold mb-1">{t('simulate.tree.preRules')}</div>
-          {renderRuleList(preRules)}
-        </>
-      )}
+    <BonusRunContext.Provider value={bonusRan}>
+      <div>
+        {preRules.length > 0 && (
+          <>
+            <div className="small fw-semibold mb-1">{t('simulate.tree.preRules')}</div>
+            {renderRuleList(preRules)}
+          </>
+        )}
 
-      {rules.length > 0 && renderRuleList(rules)}
+        {rules.length > 0 && renderRuleList(rules)}
 
-      {ast.default && (
-        <div
-          className="mb-2 p-2 rounded"
-          style={{
-            borderLeft: `3px solid var(--cui-${defaultEntry ? 'success' : 'border-color-translucent'})`,
-            background: defaultEntry ? 'var(--cui-success-bg-subtle)' : 'var(--cui-tertiary-bg)',
-          }}
-        >
-          <div className="small fw-semibold mb-1">{t('simulate.tree.default')}</div>
-          <ul className="mb-0 ps-3" style={{ listStyle: 'none' }}>
-            <StatementNode node={ast.default} byId={byId} t={t} decisiveId={decisiveId} />
-          </ul>
-        </div>
-      )}
+        {ast.default && (
+          <div
+            className="mb-2 p-2 rounded"
+            style={{
+              borderLeft: `3px solid var(--cui-${defaultEntry ? 'success' : 'border-color-translucent'})`,
+              background: defaultEntry ? 'var(--cui-success-bg-subtle)' : 'var(--cui-tertiary-bg)',
+            }}
+          >
+            <div className="small fw-semibold mb-1">{t('simulate.tree.default')}</div>
+            <ul className="mb-0 ps-3" style={{ listStyle: 'none' }}>
+              <StatementNode node={ast.default} byId={byId} t={t} decisiveId={decisiveId} />
+            </ul>
+          </div>
+        )}
 
-      {postRules.length > 0 && (
-        <>
-          <div className="small fw-semibold mb-1 mt-2">{t('simulate.tree.postRules')}</div>
-          {renderRuleList(postRules)}
-        </>
-      )}
-    </div>
+        {postRules.length > 0 && (
+          <>
+            <div className="small fw-semibold mb-1 mt-2">{t('simulate.tree.postRules')}</div>
+            {renderRuleList(postRules)}
+          </>
+        )}
+      </div>
+    </BonusRunContext.Provider>
   )
 }
 

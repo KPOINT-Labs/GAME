@@ -197,7 +197,10 @@ class DslStrategy(BaseStrategy):
 
         Returns:
             tuple: ``(points, case_name)`` or ``(points, case_name,
-            callback_data)`` produced by the program; ``(0, None)`` when the
+            callback_data)`` produced by the program, or ``(points,
+            case_name, callback_data_or_None, breakdown)`` when an
+            ``assign_points`` ended a DSL_FULL run (``breakdown`` lists the
+            base value and each ``add_bonus``); ``(0, None)`` when the
             definition has no AST.
         """
         if self._definition.astJson is None:
@@ -236,9 +239,9 @@ class DslStrategy(BaseStrategy):
                     externalUserId,
                     data,
                 )
-            # ``result`` is the 2- or 3-tuple
-            # (points, case_name [, callback_data]). Normalise for the
-            # observer; the caller still gets the original tuple back.
+            # ``result`` is the 2-, 3- or 4-tuple
+            # (points, case_name [, callback_data [, breakdown]]). Normalise
+            # for the observer; the caller still gets the original tuple back.
             padded = result + (None,)
             points_emitted, case_name_emitted, _cb = padded[:3]
             # Pull the last-run trace / node count off the strategy so
@@ -510,10 +513,16 @@ class DslStrategy(BaseStrategy):
                 ``callback_data``.
 
         Returns:
-            tuple: ``(points, case_name, callback_data)`` when callback data is
-            present, otherwise ``(points, case_name)``.
+            tuple: ``(points, case_name, callback_data_or_None, breakdown)``
+            when the run produced a points breakdown (an ``assign_points``
+            ended a DSL_FULL run); otherwise ``(points, case_name,
+            callback_data)`` when callback data is present, else
+            ``(points, case_name)``.
         """
         cb = run.get("callback_data") or {}
+        breakdown = run.get("breakdown")
+        if breakdown is not None:
+            return run["points"], run.get("case_name"), cb or None, breakdown
         if cb:
             return run["points"], run.get("case_name"), cb
         return run["points"], run.get("case_name")

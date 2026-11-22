@@ -113,10 +113,10 @@ const composeClean = (ast, name, description) =>
 const astHasContent = (ast) =>
   Boolean(
     ast &&
-      ((Array.isArray(ast.rules) && ast.rules.length > 0) ||
-        (Array.isArray(ast.pre_rules) && ast.pre_rules.length > 0) ||
-        (Array.isArray(ast.post_rules) && ast.post_rules.length > 0) ||
-        ast.default),
+    ((Array.isArray(ast.rules) && ast.rules.length > 0) ||
+      (Array.isArray(ast.pre_rules) && ast.pre_rules.length > 0) ||
+      (Array.isArray(ast.post_rules) && ast.post_rules.length > 0) ||
+      ast.default),
   )
 
 const StrategyEditor = () => {
@@ -1803,6 +1803,34 @@ const StrategyEditor = () => {
                     </table>
                   </div>
                 )}
+                {/* What the award's breakdown column will hold: the
+                    assign_points value as "base" plus each add_bonus. */}
+                {Array.isArray(simResult.breakdown?.components) &&
+                  simResult.breakdown.components.length > 0 && (
+                    <div className="small mb-2" data-testid="sim-breakdown">
+                      <strong>{t('result.breakdown')}:</strong>
+                      <table className="table table-sm small mb-0 mt-1">
+                        <tbody>
+                          {simResult.breakdown.components.map((c) => (
+                            <tr key={c.key}>
+                              <td>
+                                {c.key === 'base' ? (
+                                  t('result.breakdownBase')
+                                ) : (
+                                  <code>{c.key}</code>
+                                )}
+                              </td>
+                              <td className="text-end">{c.points}</td>
+                            </tr>
+                          ))}
+                          <tr className="fw-semibold">
+                            <td>{t('result.breakdownTotal')}</td>
+                            <td className="text-end">{simResult.points}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 {simResult.callbackData && Object.keys(simResult.callbackData).length > 0 && (
                   <div className="small mb-2">
                     <strong>{t('result.callbackData')}:</strong>{' '}

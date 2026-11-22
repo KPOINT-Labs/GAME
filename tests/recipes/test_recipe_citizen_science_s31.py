@@ -239,12 +239,15 @@ async def test_citizen_science_recipe_walks_all_scoring_moments():
             await session.commit()
 
         async def score(data):
-            return await strategy.calculate_points(
+            # The recipe documents (points, caseName); the rest of the tuple
+            # (callback data, points breakdown) is covered by the DSL tests.
+            result = await strategy.calculate_points(
                 externalGameId=GAME,
                 externalTaskId=TASK,
                 externalUserId=USER,
                 data=data,
             )
+            return result[:2]
 
         # Moment 1 - completed task, no history yet: task.measurements_count
         # is 0 (< 2), so the onboarding rule wins.

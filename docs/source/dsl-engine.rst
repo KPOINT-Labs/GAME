@@ -85,6 +85,15 @@ Execution semantics mirror the built-in ``default`` strategy:
   assignment accumulate into a dict; statements *after* it never run.
 * If no rule matches, the program's ``default`` section runs; otherwise the
   result is ``(0, None, {})``.
+* ``add_bonus`` statements (main ``rules`` only) accumulate named bonuses and
+  do not halt; a matched rule without ``assign_points`` falls through with
+  its bonuses. The ``assign_points`` that ends the run (in a rule or in
+  ``default``) is the ``base``: the awarded points are base plus every bonus,
+  and ``DslStrategy`` returns ``{"version": 1, "components": [{"key": "base",
+  ...}, {"key": <bonus>, ...}]}`` as the 4th element of its result, which the
+  points service stores on ``userpoints.breakdown``. A run that no
+  ``assign_points`` ends discards its bonuses. ``DSL_EXTEND`` results carry no
+  breakdown.
 
 Execution modes
 ===============

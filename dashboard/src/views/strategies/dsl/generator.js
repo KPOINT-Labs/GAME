@@ -31,6 +31,7 @@ const BLOCK_TO_AST = {
   gd_func_call: blockToFuncCall,
   gd_assign_points: blockToAssignPoints,
   gd_set_callback_data: blockToSetCallbackData,
+  gd_add_bonus: blockToAddBonus,
   gd_set_data: blockToSetData,
   gd_veto: blockToVeto,
   gd_set_points: blockToSetPoints,
@@ -163,6 +164,7 @@ function collectStatements(firstBlock) {
 function blockToStatement(block) {
   if (block.type === 'gd_assign_points') return blockToAssignPoints(block)
   if (block.type === 'gd_set_callback_data') return blockToSetCallbackData(block)
+  if (block.type === 'gd_add_bonus') return blockToAddBonus(block)
   // Statements.
   if (block.type === 'gd_set_data') return blockToSetData(block)
   if (block.type === 'gd_veto') return blockToVeto(block)
@@ -192,6 +194,20 @@ function blockToSetCallbackData(block) {
     value: valueBlock
       ? blockToExpression(valueBlock)
       : { type: 'literal', id: `${block.id}_v_missing`, value: null },
+  }
+}
+
+// A named bonus added on top of the base points of the assign_points that
+// ends the run; each key becomes a component of the award's breakdown.
+function blockToAddBonus(block) {
+  const valueBlock = block.getInputTargetBlock('VALUE')
+  return {
+    type: 'add_bonus',
+    id: block.id,
+    key: block.getFieldValue('KEY') || '',
+    value: valueBlock
+      ? blockToExpression(valueBlock)
+      : { type: 'literal', id: `${block.id}_v_missing`, value: 0 },
   }
 }
 

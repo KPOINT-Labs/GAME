@@ -30,6 +30,11 @@ Execution semantics mirror ``app/engine/default.py``:
   assignment never run.
 * If no rule matches, the program's ``default`` section runs (if any);
   otherwise the result is ``(0, None, {})``.
+* ``add_bonus`` statements accumulate named bonuses across matched rules
+  (they do not halt). The ``assign_points`` that ends the run - in a rule
+  or in ``default`` - is the ``base``; the result's points are base plus
+  every bonus and ``breakdown`` lists each component. A run that no
+  ``assign_points`` ends discards its bonuses.
 """
 
 from __future__ import annotations
@@ -47,6 +52,7 @@ from app.engine.dsl_ast import (
     ALLOWED_COMPARE_OPS,
     ALLOWED_FUNC_NAMES,
     FUNC_ARITY,
+    NODE_ADD_BONUS,
     NODE_AND,
     NODE_ARITH,
     NODE_ASSIGN_POINTS,
@@ -62,6 +68,7 @@ from app.engine.dsl_ast import (
     NODE_SET_DATA,
     NODE_SET_POINTS,
     NODE_VETO,
+    build_points_breakdown,
 )
 from app.engine.dsl_execution_context import ExecutionContext
 
@@ -77,6 +84,9 @@ class DslExecutionResult(TypedDict, total=False):
     # fired so the orchestrator skips parent + post entirely.
     working_data: Dict[str, Any]
     vetoed: bool
+    # ``{"version": 1, "components": [...]}`` when an assign_points ended
+    # a DSL_FULL run (base + add_bonus components), else None.
+    breakdown: Optional[Dict[str, Any]]
 
 
 class _DslHalt(Exception):
@@ -151,6 +161,9 @@ class DslInterpreter:
             # existing contract is unchanged.
             "working_data": state.working_data,
             "vetoed": state.vetoed,
+            # Set only when an assign_points ended the run: the base
+            # value plus every add_bonus, as persisted on the award.
+            "breakdown": state.breakdown,
         }
 
     # top-level dispatch
@@ -347,7 +360,10 @@ class DslInterpreter:
                         "actualType": type(value).__name__,
                     },
                 )
-            state.points = value
+            # The assigned value is the base; bonuses added so far are
+            # summed on top and the components become the breakdown.
+            # The trace keeps the base value (what this node evaluated to).
+            state.points, state.breakdown = build_points_breakdown(value, state.bonuses)
             state.case_name = node["case_name"]
             state.matched = True
             state.trace.append(
@@ -359,6 +375,33 @@ class DslInterpreter:
                 }
             )
             raise _DslHalt()
+
+        if ntype == NODE_ADD_BONUS:
+            value = await self._eval_expression(
+                node["value"], ctx, state, depth=depth + 1
+            )
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise DslExecutionError(
+                    detail="add_bonus.value must evaluate to a number.",
+                    headers={"X-Node-Id": str(node.get("id"))},
+                    code="DSL_ADD_BONUS_NOT_NUMBER",
+                    params={
+                        "nodeId": node.get("id"),
+                        "actualType": type(value).__name__,
+                    },
+                )
+            key = node["key"]
+            # The same key added twice (e.g. from two rules) is one
+            # component holding the sum.
+            state.bonuses[key] = state.bonuses.get(key, 0) + value
+            state.trace.append(
+                {
+                    "nodeId": node.get("id"),
+                    "type": ntype,
+                    "value": value,
+                }
+            )
+            return
 
         if ntype == NODE_SET_CALLBACK_DATA:
             value = await self._eval_expression(
@@ -819,6 +862,11 @@ class _RunState:
         # orchestrator skips parent + post entirely.
         "working_data",
         "vetoed",
+        # Points breakdown. ``bonuses`` accumulates add_bonus values by
+        # key (insertion-ordered); ``breakdown`` is set by the
+        # assign_points that ends the run and stays None otherwise.
+        "bonuses",
+        "breakdown",
     )
 
     def __init__(self) -> None:
@@ -830,6 +878,8 @@ class _RunState:
         self.matched: bool = False
         self.working_data: Dict[str, Any] = {}
         self.vetoed: bool = False
+        self.bonuses: Dict[str, Any] = {}
+        self.breakdown: Optional[Dict[str, Any]] = None
 
 
 _COMPARE_HANDLERS = {

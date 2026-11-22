@@ -72,6 +72,12 @@ NODE_VETO = "veto"
 NODE_SET_POINTS = "set_points"
 NODE_SET_CASE_NAME = "set_case_name"
 
+# Adds a named bonus to the run's points breakdown without halting. Bonuses
+# accumulate across matched rules (like set_callback_data) and are added to
+# the ``assign_points`` value that ends the run, which becomes the ``base``
+# component. Main ``rules`` only (see ``build_points_breakdown``).
+NODE_ADD_BONUS = "add_bonus"
+
 
 ALL_NODE_TYPES: Set[str] = {
     NODE_PROGRAM,
@@ -91,6 +97,7 @@ ALL_NODE_TYPES: Set[str] = {
     NODE_VETO,
     NODE_SET_POINTS,
     NODE_SET_CASE_NAME,
+    NODE_ADD_BONUS,
 }
 
 CONDITION_NODE_TYPES: Set[str] = {
@@ -117,6 +124,7 @@ STATEMENT_NODE_TYPES: Set[str] = {
     NODE_VETO,
     NODE_SET_POINTS,
     NODE_SET_CASE_NAME,
+    NODE_ADD_BONUS,
 }
 
 
@@ -134,6 +142,7 @@ STATEMENT_ALLOWED_CONTEXTS: Dict[str, Set[str]] = {
     NODE_VETO: {"pre"},
     NODE_SET_POINTS: {"post"},
     NODE_SET_CASE_NAME: {"post"},
+    NODE_ADD_BONUS: {"rule"},
 }
 
 
@@ -174,6 +183,47 @@ _DATA_KEY_RE = re.compile(r"^[A-Za-z0-9_]+$")
 # strategy `name` cap so dashboards don't have to special-case it.
 CASE_NAME_MAX_LEN = 200
 _CASE_NAME_RE = re.compile(r"^[\x20-\x7E]{1,200}$")
+
+
+# Points breakdown. The ``assign_points`` value is the ``base`` component and
+# each ``add_bonus`` key is another component. Bonus keys use the data-key
+# charset and may not reuse the base key.
+BASE_COMPONENT_KEY = "base"
+BONUS_KEY_MAX_LEN = 64
+_BONUS_KEY_RE = re.compile(r"^[A-Za-z0-9_]{1,64}$")
+
+
+def is_valid_bonus_key(value: Any) -> bool:
+    """``add_bonus.key``: 1-64 chars of ``[A-Za-z0-9_]``, other than ``base``."""
+    return (
+        isinstance(value, str)
+        and bool(_BONUS_KEY_RE.match(value))
+        and value != BASE_COMPONENT_KEY
+    )
+
+
+def build_points_breakdown(
+    base: Any, bonuses: Dict[str, Any]
+) -> Tuple[Any, Dict[str, Any]]:
+    """
+    Return ``(total, breakdown)`` for a base value plus named bonuses.
+
+    The breakdown has the shape the points service persists and checks:
+    ``{"version": 1, "components": [{"key": "base", "points": base},
+    {"key": <bonus>, "points": n}, ...]}``. ``total`` is summed from the
+    components in order, so it always matches that check exactly.
+
+    Args:
+        base: The ``assign_points`` value.
+        bonuses (Dict[str, Any]): Bonus totals by key, in first-added order.
+
+    Returns:
+        tuple: ``(total, breakdown)``.
+    """
+    components = [{"key": BASE_COMPONENT_KEY, "points": base}]
+    components.extend({"key": key, "points": value} for key, value in bonuses.items())
+    total = sum(component["points"] for component in components)
+    return total, {"version": 1, "components": components}
 
 
 @dataclass(frozen=True)

@@ -99,7 +99,8 @@
       "gd_veto": "Veto",
       "gd_set_points": "Set points",
       "gd_set_case_name": "Set caseName",
-      "gd_field_parent": "Parent field"
+      "gd_field_parent": "Parent field",
+      "gd_add_bonus": "Add bonus"
     }
   },
   "lifecycle": {
@@ -185,7 +186,9 @@
       "emptyBranch": "(no actions)",
       "preRules": "Pre-rules",
       "postRules": "Post-rules",
-      "default": "Default"
+      "default": "Default",
+      "assignBasePoints": "Grants {{points}} base points (case: {{caseName}})",
+      "addBonus": "Adds bonus {{key}} = {{value}}"
     },
     "scenarios": {
       "title": "Saved scenarios",
@@ -213,7 +216,10 @@
     "summaryPoints": "Awarded {{points}} points",
     "ruleApplied": "Rule applied: {{caseName}}",
     "noRuleMatched": "No rule matched (0 points).",
-    "showTechnical": "Show technical detail (JSON)"
+    "showTechnical": "Show technical detail (JSON)",
+    "breakdown": "Points breakdown",
+    "breakdownBase": "Base points",
+    "breakdownTotal": "Total"
   },
   "validation": {
     "RULE_THEN_EMPTY": "The rule needs at least one action. Drag a block from the 'Assign' category (e.g. 'assign points') and snap it into the 'then' slot.",
@@ -237,7 +243,8 @@
       "set_data": "Set data",
       "veto": "Veto",
       "set_points": "Set points",
-      "set_case_name": "Set caseName"
+      "set_case_name": "Set caseName",
+      "add_bonus": "Add bonus"
     }
   },
   "parentSchema": {

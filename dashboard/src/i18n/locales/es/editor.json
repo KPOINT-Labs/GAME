@@ -99,7 +99,8 @@
       "gd_veto": "Veto",
       "gd_set_points": "Set puntos",
       "gd_set_case_name": "Set caseName",
-      "gd_field_parent": "Campo del padre"
+      "gd_field_parent": "Campo del padre",
+      "gd_add_bonus": "Sumar bono"
     }
   },
   "lifecycle": {
@@ -185,7 +186,9 @@
       "emptyBranch": "(sin acciones)",
       "preRules": "Reglas previas (pre)",
       "postRules": "Reglas posteriores (post)",
-      "default": "Por defecto"
+      "default": "Por defecto",
+      "assignBasePoints": "Otorga {{points}} puntos base (caso: {{caseName}})",
+      "addBonus": "Suma bono {{key}} = {{value}}"
     },
     "scenarios": {
       "title": "Escenarios guardados",
@@ -213,7 +216,10 @@
     "summaryPoints": "Otorgó {{points}} puntos",
     "ruleApplied": "Regla aplicada: {{caseName}}",
     "noRuleMatched": "Ninguna regla coincidió (0 puntos).",
-    "showTechnical": "Ver detalle técnico (JSON)"
+    "showTechnical": "Ver detalle técnico (JSON)",
+    "breakdown": "Desglose de puntos",
+    "breakdownBase": "Puntos base",
+    "breakdownTotal": "Total"
   },
   "validation": {
     "RULE_THEN_EMPTY": "La regla necesita al menos una acción. Arrastra un bloque de la categoría 'Asigna' (por ejemplo 'asignar puntos') y conéctalo al hueco 'entonces'.",
@@ -237,7 +243,8 @@
       "set_data": "Set data",
       "veto": "Veto",
       "set_points": "Set puntos",
-      "set_case_name": "Set caseName"
+      "set_case_name": "Set caseName",
+      "add_bonus": "Sumar bono"
     }
   },
   "parentSchema": {

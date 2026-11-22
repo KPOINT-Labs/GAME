@@ -151,5 +151,6 @@ class DslSimulationService(BaseService):
             points=float(result["points"]),
             caseName=result["case_name"],
             callbackData=dict(result["callback_data"]),
+            breakdown=result.get("breakdown"),
             executionTrace=[ExecutionTraceEntry(**entry) for entry in result["trace"]],
         )
