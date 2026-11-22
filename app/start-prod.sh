@@ -13,7 +13,7 @@ APP_DIR="${APP_DIR:-/app}"
 
 echo "-----------------------------------------------------"
 echo "DB wait: ${DB_HOST}:${DB_PORT} db=${DB_NAME} user=${DB_USER}"
-echo "DATABASE_URL=${DATABASE_URL}"
+echo "DATABASE_URL=postgresql://${DB_USER}:***@${DB_HOST}:${DB_PORT}/${DB_NAME}"
 echo "-----------------------------------------------------"
 
 

@@ -220,3 +220,28 @@ def test_sentry_settings_honour_env_overrides(monkeypatch):
     assert reloaded.configs.SENTRY_SEND_DEFAULT_PII is True
     assert reloaded.configs.SENTRY_TRACES_SAMPLE_RATE == 1.0
     assert reloaded.configs.SENTRY_PROFILING_ENABLED is True
+
+
+def test_database_uri_percent_encodes_credentials():
+    from sqlalchemy.engine import make_url
+
+    from app.core.config import build_database_uri
+
+    password = "p@ss:w/rd#%?x"
+    uri = build_database_uri(
+        "postgresql", "app user", password, "db-rw", "5432", "game"
+    )
+
+    url = make_url(uri)
+    assert url.password == password
+    assert url.username == "app user"
+    assert (url.host, url.port, url.database) == ("db-rw", 5432, "game")
+
+
+def test_database_uri_keeps_plain_credentials_readable():
+    from app.core.config import build_database_uri
+
+    assert (
+        build_database_uri("postgresql", "root", "example", "postgres", "5432", "db")
+        == "postgresql://root:example@postgres:5432/db"
+    )

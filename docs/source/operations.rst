@@ -197,13 +197,16 @@ Creating the cluster
   node loss.
 * Choose ``GAMIFICATIONENGINE_CNPG_STORAGE_SIZE`` and
   ``GAMIFICATIONENGINE_CNPG_WAL_STORAGE_SIZE`` (per instance; the WAL volume
-  is fixed at creation).
+  is fixed at creation), ``GAMIFICATIONENGINE_CNPG_STORAGE_CLASS`` and
+  ``GAMIFICATIONENGINE_CNPG_TOPOLOGY_KEY`` (``topology.kubernetes.io/zone``
+  to spread over availability zones, ``kubernetes.io/hostname`` over nodes).
+* On AWS, first create the AWS resources and the credentials Secret: see
+  `Deploying on AWS`_.
 
 **Steps**
 
 1. Install the operator (above).
-2. In ``.env`` set ``GAMIFICATIONENGINE_DB_HOST=game-db-rw`` and the same host
-   in ``GAMIFICATIONENGINE_DATABASE_URL``.
+2. In ``.env`` set ``GAMIFICATIONENGINE_DB_HOST=game-db-rw``.
 3. Create the cluster and wait for it:
 
    .. code-block:: bash
@@ -221,6 +224,60 @@ Creating the cluster
 
       kubectl -n $NS delete pod "$(kubectl -n $NS get cluster game-db -o jsonpath='{.status.currentPrimary}')"
       kubectl -n $NS get cluster game-db -w
+
+Database credentials
+--------------------
+
+The application user's name and password live in one Kubernetes Secret
+(``GAMIFICATIONENGINE_DB_CREDENTIALS_SECRET``, type ``basic-auth``). The API
+reads ``DB_USER``/``DB_PASSWORD`` from it, the cluster creates its owner role
+from it, and the cluster's managed role keeps the database password in step
+with it (the Secret carries ``cnpg.io/reload``). The ConfigMap holds no
+credentials. ``GAMIFICATIONENGINE_DB_SECRETS_SOURCE`` selects where the Secret
+comes from:
+
+* ``env``: rendered from ``GAMIFICATIONENGINE_DB_USER`` /
+  ``GAMIFICATIONENGINE_DB_PASSWORD`` in ``.env`` (applied by ``--cnpg``,
+  ``--postgres`` and ``--api``).
+* ``aws``: synced from AWS Secrets Manager by External Secrets (``--aws``).
+
+**Rotating the password**: change it at the source (``.env`` and
+``--cnpg``, or the Secrets Manager secret), let the Secret update (External
+Secrets syncs within an hour; force it with
+``kubectl -n $NS annotate externalsecret game-db-app-credentials force-sync=$(date +%s) --overwrite``),
+then restart the API (``kubectl -n $NS rollout restart deployment/gamificationengine``).
+Between the database change and the restart, new API connections fail.
+
+Deploying on AWS
+----------------
+
+Terraform in ``infra/aws/db`` (see its ``README.md``) creates, for an
+existing EKS cluster:
+
+* a customer-managed **KMS key** that encrypts the database volumes, the
+  secrets and the backups;
+* the **Secrets Manager** secret ``<prefix>/<env>/db/app``
+  (``{"username", "password"}``), with a generated password that never enters
+  Terraform state;
+* an **IAM role** for the service account External Secrets uses, allowed to
+  read only that environment's database secrets;
+* the **S3 bucket** and IAM role for CloudNativePG backups (used by the
+  backup configuration).
+
+Then, on the cluster:
+
+1. Install the External Secrets Operator (Helm chart ``external-secrets``)
+   and the CloudNativePG operator.
+2. Copy the Terraform outputs into ``.env`` (``GAMIFICATIONENGINE_AWS_*``),
+   set ``GAMIFICATIONENGINE_DB_SECRETS_SOURCE=aws``,
+   ``GAMIFICATIONENGINE_CNPG_STORAGE_CLASS=gp3-encrypted`` and
+   ``GAMIFICATIONENGINE_DB_USER`` to the Terraform ``db_app_username``.
+3. ``./deploy-kubernetes.sh --aws``: the ``gp3-encrypted`` StorageClass (EBS,
+   KMS, ``WaitForFirstConsumer``, ``Retain``), the service account, the
+   ``SecretStore`` and the ``ExternalSecret``. Check the sync:
+   ``kubectl -n $NS get externalsecret game-db-app-credentials`` shows
+   ``SecretSynced``.
+4. Continue with `Creating the cluster`_ (``--cnpg``, then ``--api``).
 
 Importing an existing database (optional)
 -----------------------------------------

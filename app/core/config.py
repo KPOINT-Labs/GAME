@@ -3,6 +3,7 @@ import logging
 import os
 from ipaddress import IPv4Network, IPv6Network
 from typing import List, Optional, Union
+from urllib.parse import quote
 
 from dotenv import load_dotenv
 from pydantic import field_validator
@@ -119,6 +120,24 @@ _NON_PROD_DB_NAME_DEFAULTS = {
 # rejected in prod/stage by ``_validate_required_secrets`` so the placeholder
 # can never reach a protected deployment.
 _INSECURE_KEYCLOAK_CLIENT_SECRET_DEFAULT = "admin-client-secret"
+
+
+def build_database_uri(
+    engine: str,
+    user: Optional[str],
+    password: Optional[str],
+    host: Optional[str],
+    port: str,
+    database: Optional[str],
+) -> str:
+    """Connection URL with the user and password percent-encoded, so
+    characters such as ``@``, ``:``, ``/`` or ``#`` in a password (for
+    example one generated in a secrets manager) cannot break the URL."""
+
+    def _enc(value: Optional[str]) -> Optional[str]:
+        return quote(value, safe="") if value else value
+
+    return f"{engine}://{_enc(user)}:{_enc(password)}@{host}:{port}/{database}"
 
 
 def _resolve_db_name(env: str, db_name: Optional[str]) -> str:
@@ -306,15 +325,13 @@ class Configs(BaseSettings):
     DB_PORT: str = os.getenv("DB_PORT", "5432")
     DB_ENGINE: str = os.getenv("DB_ENGINE", "postgresql")
 
-    DATABASE_URI: str = (
-        "{db_engine}://{user}:{password}@{host}:{port}/{database}".format(  # noqa: E501
-            db_engine=DB_ENGINE,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            host=DB_HOST,
-            port=DB_PORT,
-            database=_resolve_db_name(ENV, DB_NAME),
-        )
+    DATABASE_URI: str = build_database_uri(
+        DB_ENGINE,
+        DB_USER,
+        DB_PASSWORD,
+        DB_HOST,
+        DB_PORT,
+        _resolve_db_name(ENV, DB_NAME),
     )
 
     # find query

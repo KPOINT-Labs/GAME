@@ -9,6 +9,11 @@ if [ -f ".env" ]; then
 fi
 
 NAMESPACE=${GAMIFICATIONENGINE_NAMESPACE}
+# Where the application database credentials Secret comes from: "env" (from
+# .env, applied by --cnpg/--postgres) or "aws" (AWS Secrets Manager through
+# External Secrets, applied by --aws).
+DB_SECRETS_SOURCE=${GAMIFICATIONENGINE_DB_SECRETS_SOURCE:-env}
+DB_SECRET=${GAMIFICATIONENGINE_DB_CREDENTIALS_SECRET}
 
 # Colors
 GREEN='\033[0;32m'
@@ -25,6 +30,9 @@ show_help() {
     echo "  --postgres  Apply the single-instance PostgreSQL deployment (no failover; non-production)."
     echo "  --cnpg      Apply the highly available PostgreSQL cluster (CloudNativePG;"
     echo "              the operator must be installed first)."
+    echo "  --aws       Apply the AWS pieces: encrypted gp3 StorageClass and the"
+    echo "              database credentials from AWS Secrets Manager (External"
+    echo "              Secrets Operator must be installed; see infra/aws/db)."
     echo "  --api       Apply only the API deployment and its dependencies."
     echo "  --verbose   Display verbose output."
     echo "  --help      Display this help message."
@@ -40,7 +48,9 @@ apply_yaml() {
     VERBOSE=$2
     TEMP_FILE="temp-$(basename $FILE)"
 
-    envsubst < $FILE > $TEMP_FILE
+    # Substitute only GAMIFICATIONENGINE_* variables: manifests also contain
+    # shell variables meant for the container (e.g. $POSTGRES_USER in probes).
+    envsubst "$(env | grep -o '^GAMIFICATIONENGINE_[A-Za-z0-9_]*' | sed 's/^/$/' | tr '\n' ' ')" < $FILE > $TEMP_FILE
 
     if [ "$VERBOSE" = "--verbose" ]; then
         echo -e "${YELLOW}Executing command: kubectl --namespace $NAMESPACE apply -f $TEMP_FILE${NC}"
@@ -65,18 +75,40 @@ for arg in "$@"; do
     fi
 done
 
+if [ -z "$DB_SECRET" ] && [[ "$1" =~ ^--(cnpg|postgres|api|aws)$ ]]; then
+    echo -e "${RED}[-] Error: set GAMIFICATIONENGINE_DB_CREDENTIALS_SECRET in .env (see .env.sample).${NC}"
+    exit 1
+fi
+
+DB_SECRET_FILES=()
+if [ "$DB_SECRETS_SOURCE" = "env" ]; then
+    DB_SECRET_FILES=("kubernetes/secrets/db-app-credentials-secret.yaml")
+elif [ "$DB_SECRETS_SOURCE" != "aws" ]; then
+    echo -e "${RED}[-] Error: GAMIFICATIONENGINE_DB_SECRETS_SOURCE must be env or aws.${NC}"
+    exit 1
+fi
+
 POSTGRES_FILES=(
+    "${DB_SECRET_FILES[@]}"
     "kubernetes/volumen/postgres-data-persistentvolumeclaim.yaml"
     "kubernetes/services/postgres-service.yaml"
     "kubernetes/deployments/postgres-deployment.yaml"
 )
 
 CNPG_FILES=(
-    "kubernetes/cnpg/postgres-cluster-secrets.yaml"
+    "${DB_SECRET_FILES[@]}"
     "kubernetes/cnpg/postgres-cluster.yaml"
 )
 
+AWS_FILES=(
+    "kubernetes/aws/storageclass-gp3-encrypted.yaml"
+    "kubernetes/aws/secrets-reader-serviceaccount.yaml"
+    "kubernetes/aws/secretstore-aws.yaml"
+    "kubernetes/aws/externalsecret-db-app.yaml"
+)
+
 API_FILES=(
+    "${DB_SECRET_FILES[@]}"
     "kubernetes/configmaps/env-prod-configmap.yaml"
     "kubernetes/services/gamificationengine-service.yaml"
     "kubernetes/deployments/gamificationengine-deployment.yaml"
@@ -95,6 +127,16 @@ elif [ "$1" = "--cnpg" ]; then
         exit 1
     fi
     FILES=("${CNPG_FILES[@]}")
+elif [ "$1" = "--aws" ]; then
+    if [ "$DB_SECRETS_SOURCE" != "aws" ]; then
+        echo -e "${RED}[-] Error: --aws needs GAMIFICATIONENGINE_DB_SECRETS_SOURCE=aws.${NC}"
+        exit 1
+    fi
+    if ! kubectl get crd externalsecrets.external-secrets.io >/dev/null 2>&1; then
+        echo -e "${RED}[-] Error: the External Secrets Operator is not installed (no externalsecrets.external-secrets.io CRD). See infra/aws/db/README.md.${NC}"
+        exit 1
+    fi
+    FILES=("${AWS_FILES[@]}")
 elif [ "$1" = "--api" ]; then
     FILES=("${API_FILES[@]}")
 elif [ "$1" = "--ingress" ]; then
@@ -102,6 +144,15 @@ elif [ "$1" = "--ingress" ]; then
 else
     echo "Invalid option or no option provided. Use --help for usage information."
     exit 1
+fi
+
+# With credentials from AWS, the Secret must have been synced (--aws) before
+# the database or the API can start.
+if [ "$DB_SECRETS_SOURCE" = "aws" ] && [[ "$1" =~ ^--(cnpg|postgres|api)$ ]]; then
+    if ! kubectl --namespace "$NAMESPACE" get secret "$DB_SECRET" >/dev/null 2>&1; then
+        echo -e "${RED}[-] Error: Secret $DB_SECRET does not exist yet. Run $0 --aws and check: kubectl -n $NAMESPACE get externalsecret $DB_SECRET${NC}"
+        exit 1
+    fi
 fi
 
 FAILED=0
