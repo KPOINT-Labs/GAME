@@ -133,6 +133,8 @@ Kubernetes in ``kubernetes/configmaps/*-prometheus-rules.yaml``):
      - ``/activity``'s p95 latency is above 500 ms.
    * - ``ApiRoute5xxRateHigh``
      - More than 5% of a route's requests fail with 5xx (``critical``).
+   * - ``RedisUnavailableFallbackActive``
+     - Redis is unavailable and the API runs on its fallbacks.
 
 Each requires at least 0.05 requests/s on the route, so one slow request on an
 otherwise idle route does not page.
@@ -273,6 +275,42 @@ Surfaced through the dashboard and KPI endpoints:
    GET /api/v1/strategies/custom/{id}/metrics   # per-strategy aggregates
    GET /api/v1/strategies/custom/compare        # A/B comparison
 
+Database metrics (CloudNativePG)
+================================
+
+Each database instance exports metrics on port ``9187`` (named
+``metrics``): PostgreSQL statistics (``cnpg_*``) and, once backups are
+configured, the Barman Cloud plugin's backup metrics
+(``barman_cloud_cloudnative_pg_io_*``). The alert rules in
+``kubernetes/configmaps/db-prometheus-rules.yaml`` (see :doc:`operations`,
+"Backup monitoring") expect a ``cluster`` label with the cluster's name.
+
+* With the Prometheus Operator: ``./deploy-kubernetes.sh --cnpg-monitoring``
+  (``kubernetes/cnpg/postgres-podmonitor.yaml``).
+* Without it, an equivalent scrape job:
+
+.. code-block:: yaml
+
+   - job_name: cnpg
+     kubernetes_sd_configs:
+       - role: pod
+         namespaces: {names: [gamificationengine]}
+     relabel_configs:
+       - source_labels: [__meta_kubernetes_pod_label_cnpg_io_cluster]
+         regex: game-db
+         action: keep
+       - source_labels: [__meta_kubernetes_pod_container_port_name]
+         regex: metrics
+         action: keep
+       - source_labels: [__meta_kubernetes_pod_label_cnpg_io_cluster]
+         target_label: cluster
+       - source_labels: [__meta_kubernetes_pod_label_cnpg_io_instanceRole]
+         target_label: role
+       - source_labels: [__meta_kubernetes_namespace]
+         target_label: namespace
+       - source_labels: [__meta_kubernetes_pod_name]
+         target_label: pod
+
 What to alert on
 ================
 
@@ -291,6 +329,9 @@ What to alert on
    * - ``dsl_execution_log_dropped_total`` > 0
      - The trace sink is saturated; you're losing audit visibility (scoring is
        fine).
+   * - WAL archiving failing or a backup too old
+     - Point-in-time recovery would lose data. Alerted by the
+       ``Cnpg*`` rules (:doc:`operations`, "Backup monitoring").
    * - ``redis_fallback_total`` rate > 0
      - Redis is down or unreachable; the API runs on the fallbacks. Alerted
        by ``RedisUnavailableFallbackActive``.

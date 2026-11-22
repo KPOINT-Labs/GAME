@@ -21,6 +21,6 @@ output "backup_bucket_name" {
 }
 
 output "backup_role_arn" {
-  description = "Role for the CloudNativePG pods' service account to write backups."
+  description = "GAMIFICATIONENGINE_AWS_DB_BACKUP_ROLE_ARN: role for the CloudNativePG pods' service account (backups, and reading them when restoring)."
   value       = try(aws_iam_role.cnpg_backup[0].arn, null)
 }

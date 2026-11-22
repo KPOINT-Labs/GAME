@@ -18,3 +18,21 @@ allowVolumeExpansion: true
 # Keep the volume (and data) if a PVC is deleted by mistake; delete released
 # volumes by hand.
 reclaimPolicy: Retain
+---
+# Same, but volumes are deleted with their PVC: for throwaway clusters such
+# as the restore check (scripts/cnpg-restore-check.sh), which would otherwise
+# leave a set of EBS volumes behind on every run. Never use it for the main
+# database.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ${GAMIFICATIONENGINE_CNPG_STORAGE_CLASS}-delete
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  fsType: ext4
+  encrypted: "true"
+  kmsKeyId: ${GAMIFICATIONENGINE_AWS_DB_KMS_KEY_ARN}
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Delete

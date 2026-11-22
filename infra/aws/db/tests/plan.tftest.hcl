@@ -45,6 +45,23 @@ run "defaults" {
   }
 }
 
+run "restore_clusters_can_assume_the_backup_role" {
+  command = plan
+  variables {
+    cnpg_restore_cluster_names = ["game-db-restore-test", "game-db-2"]
+  }
+  assert {
+    condition = (
+      local.irsa_trust_subjects["cnpg_backup"] == [
+        "system:serviceaccount:gamificationengine:game-db",
+        "system:serviceaccount:gamificationengine:game-db-restore-test",
+        "system:serviceaccount:gamificationengine:game-db-2",
+      ]
+    )
+    error_message = "backup role trust subjects"
+  }
+}
+
 run "no_backups_no_csi" {
   command = plan
   variables {

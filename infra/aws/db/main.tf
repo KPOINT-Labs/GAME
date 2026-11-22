@@ -14,15 +14,23 @@ locals {
 
   # Secrets Manager path for everything this environment's database needs.
   secret_prefix = "${var.name_prefix}/${var.environment}/db"
+
+  # Kubernetes service accounts allowed to assume each IRSA role.
+  irsa_trust_subjects = {
+    secrets_reader = ["system:serviceaccount:${var.k8s_namespace}:${var.secrets_reader_service_account}"]
+    # The database cluster, plus clusters restored from its backups (each
+    # CloudNativePG cluster runs as a service account named after it).
+    cnpg_backup = [
+      for sa in concat([var.cnpg_cluster_name], var.cnpg_restore_cluster_names) :
+      "system:serviceaccount:${var.k8s_namespace}:${sa}"
+    ]
+  }
 }
 
 # Trust policy for an IAM role assumed by one Kubernetes service account
 # (IAM Roles for Service Accounts).
 data "aws_iam_policy_document" "irsa_trust" {
-  for_each = {
-    secrets_reader = var.secrets_reader_service_account
-    cnpg_backup    = var.cnpg_cluster_name
-  }
+  for_each = local.irsa_trust_subjects
 
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -35,7 +43,7 @@ data "aws_iam_policy_document" "irsa_trust" {
     condition {
       test     = "StringEquals"
       variable = "${local.oidc_issuer}:sub"
-      values   = ["system:serviceaccount:${var.k8s_namespace}:${each.value}"]
+      values   = each.value
     }
 
     condition {

@@ -40,6 +40,13 @@ Copy the outputs into `.env`, then follow "Deploying on AWS" in
 | `kms_key_arn` | `GAMIFICATIONENGINE_AWS_DB_KMS_KEY_ARN` |
 | `db_app_secret_name` | `GAMIFICATIONENGINE_AWS_DB_APP_SECRET` |
 | `secrets_reader_role_arn` | `GAMIFICATIONENGINE_AWS_SECRETS_ROLE_ARN` |
+| `backup_role_arn` | `GAMIFICATIONENGINE_AWS_DB_BACKUP_ROLE_ARN` |
+
+Clusters restored from the backups (`scripts/cnpg-restore.sh`) read the
+bucket with the backup role, so their names must be in
+`cnpg_restore_cluster_names` (default: the restore check's
+`game-db-restore-test`). Add a production restore target such as `game-db-2`
+and apply before restoring into it.
 
 `db_app_username`, `k8s_namespace`, `cnpg_cluster_name` and
 `secrets_reader_service_account` must match `GAMIFICATIONENGINE_DB_USER`,

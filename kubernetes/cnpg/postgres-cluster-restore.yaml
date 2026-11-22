@@ -1,0 +1,83 @@
+# A NEW CloudNativePG cluster restored from the backups of the main cluster
+# (Barman Cloud plugin, object store GAMIFICATIONENGINE_CNPG_BACKUP_OBJECTSTORE,
+# path GAMIFICATIONENGINE_CNPG_BACKUP_SERVER_NAME): to the latest state, or to
+# a point in time. Rendered and applied by scripts/cnpg-restore.sh, which
+# inserts the recovery target; do not apply it by hand.
+#
+# Restoring never touches the main cluster or its backups: this cluster has
+# no WAL archiving (no spec.plugins), so it cannot write into the origin's
+# backup path. Before a restored cluster serves production, give it its own
+# archiving (see docs/source/operations.rst "Backups and restore").
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: ${GAMIFICATIONENGINE_CNPG_RESTORE_CLUSTER_NAME}
+spec:
+  instances: ${GAMIFICATIONENGINE_CNPG_RESTORE_INSTANCES}
+  # Same major version as the cluster that took the backups.
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.7-minimal-trixie
+  primaryUpdateStrategy: unsupervised
+  primaryUpdateMethod: switchover
+
+  postgresql:
+    synchronous:
+      method: any
+      number: 1
+      dataDurability: preferred
+      failoverQuorum: true
+    parameters:
+      shared_buffers: "512MB"
+
+  affinity:
+    enablePodAntiAffinity: true
+    podAntiAffinityType: preferred
+    topologyKey: ${GAMIFICATIONENGINE_CNPG_TOPOLOGY_KEY}
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: 2Gi
+    limits:
+      memory: 2Gi
+
+  storage:
+    storageClass: ${GAMIFICATIONENGINE_CNPG_RESTORE_STORAGE_CLASS}
+    size: ${GAMIFICATIONENGINE_CNPG_STORAGE_SIZE}
+  walStorage:
+    storageClass: ${GAMIFICATIONENGINE_CNPG_RESTORE_STORAGE_CLASS}
+    size: ${GAMIFICATIONENGINE_CNPG_WAL_STORAGE_SIZE}
+
+  # Read the backups with the backup role (infra/aws/db output
+  # backup_role_arn; the role must trust this cluster's name, see
+  # cnpg_restore_cluster_names).
+  serviceAccountTemplate:
+    metadata:
+      annotations:
+        eks.amazonaws.com/role-arn: ${GAMIFICATIONENGINE_AWS_DB_BACKUP_ROLE_ARN}
+
+  managed:
+    roles:
+      - name: ${GAMIFICATIONENGINE_DB_USER}
+        ensure: present
+        login: true
+        passwordSecret:
+          name: ${GAMIFICATIONENGINE_DB_CREDENTIALS_SECRET}
+
+  bootstrap:
+    recovery:
+      source: origin
+      # The application database and owner come from the backup; the owner's
+      # password is set from the credentials Secret.
+      database: ${GAMIFICATIONENGINE_DB_NAME}
+      owner: ${GAMIFICATIONENGINE_DB_USER}
+      secret:
+        name: ${GAMIFICATIONENGINE_DB_CREDENTIALS_SECRET}
+      # RECOVERY_TARGET (replaced by scripts/cnpg-restore.sh)
+
+  externalClusters:
+    - name: origin
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: ${GAMIFICATIONENGINE_CNPG_BACKUP_OBJECTSTORE}
+          serverName: ${GAMIFICATIONENGINE_CNPG_BACKUP_SERVER_NAME}

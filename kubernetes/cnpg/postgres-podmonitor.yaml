@@ -1,0 +1,22 @@
+# Scrape every CloudNativePG instance's metrics (port "metrics", 9187) with
+# the Prometheus Operator. CNPG 1.30 deprecates spec.monitoring.
+# enablePodMonitor in favour of a PodMonitor like this one. The cluster's
+# name becomes the "cluster" label used by the alert rules
+# (kubernetes/configmaps/db-prometheus-rules.yaml).
+# Applied by deploy-kubernetes.sh --cnpg-monitoring. Without the Prometheus
+# Operator, use the equivalent scrape config in docs/source/observability.rst.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: ${GAMIFICATIONENGINE_CNPG_CLUSTER_NAME}
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/cluster: ${GAMIFICATIONENGINE_CNPG_CLUSTER_NAME}
+  podMetricsEndpoints:
+    - port: metrics
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_label_cnpg_io_cluster]
+          targetLabel: cluster
+        - sourceLabels: [__meta_kubernetes_pod_label_cnpg_io_instanceRole]
+          targetLabel: role

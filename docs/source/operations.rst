@@ -377,9 +377,118 @@ What happens when PostgreSQL is stopped, crashes or becomes unreachable:
   the database is unavailable (they never block scoring), and rate limiting
   is unavailable with the database when ``ABUSE_PREVENTION_BACKEND`` is
   ``database``.
-* **Backups are not covered here.** A single database with no backups loses
-  everything if its disk is lost; set up scheduled backups (``pg_dump`` or
-  WAL archiving) and test restores.
+* **Backups**: see `Backups and restore`_. Until backups are configured,
+  losing every instance's volume loses the data.
+
+Backups and restore
+===================
+
+Backups use the CloudNativePG **Barman Cloud plugin**: continuous WAL
+archiving plus scheduled base backups to S3 (bucket and IAM role from
+``infra/aws/db``), which allow restoring to any point in time inside the
+retention window.
+
+**Status.** Done: the S3 bucket and IAM role (Terraform), restore and
+point-in-time recovery (``scripts/cnpg-restore.sh``), the restore check
+(``scripts/cnpg-restore-check.sh``) and monitoring (alerts below). **Not
+configured yet** (to be done separately), in this order:
+
+1. Install cert-manager and the Barman Cloud plugin (v0.16.0 or later; needs
+   CloudNativePG 1.30+) into ``cnpg-system``.
+2. Create an ``ObjectStore`` (``barmancloud.cnpg.io/v1``) named
+   ``GAMIFICATIONENGINE_CNPG_BACKUP_OBJECTSTORE`` for the bucket
+   (``s3://<backup_bucket_name>/``), using the pods' IAM role, with KMS
+   encryption, compression and a retention policy (e.g. 30 days).
+3. In ``kubernetes/cnpg/postgres-cluster.yaml``: ``spec.plugins`` with
+   ``barman-cloud.cloudnative-pg.io``, ``isWALArchiver: true`` and
+   ``barmanObjectName``; and ``serviceAccountTemplate`` with the
+   ``eks.amazonaws.com/role-arn`` annotation (``backup_role_arn``). The
+   archive path (``serverName``) defaults to the cluster name and must match
+   ``GAMIFICATIONENGINE_CNPG_BACKUP_SERVER_NAME``.
+4. A daily ``ScheduledBackup`` (``method: plugin``).
+5. Run ``scripts/cnpg-restore-check.sh`` once a backup exists.
+
+Restore and point-in-time recovery
+----------------------------------
+
+``scripts/cnpg-restore.sh`` creates a **new** cluster from the backups
+(template ``kubernetes/cnpg/postgres-cluster-restore.yaml``); the running
+cluster and its backups are never touched, and the restored cluster does not
+archive WAL, so it cannot write into the original's backup path.
+
+.. code-block:: bash
+
+   # Latest state in the archive
+   scripts/cnpg-restore.sh --name game-db-2 --instances 3
+
+   # Point in time: the last transaction before this moment (RFC 3339, with zone)
+   scripts/cnpg-restore.sh --name game-db-2 --instances 3 --target-time 2026-11-22T08:00:00Z
+
+* The new cluster's name must be in the backup role's trust (Terraform
+  ``cnpg_restore_cluster_names``) to read the bucket; add it and apply
+  before restoring.
+* It uses ``GAMIFICATIONENGINE_CNPG_STORAGE_CLASS`` (volumes kept) unless
+  ``--storage-class`` says otherwise, and the same credentials Secret, so the
+  API's user and password work on it.
+
+**Recovering production** (e.g. after data was deleted or corrupted at a
+known time):
+
+1. Restore to just before the incident, into a new cluster (``game-db-2``).
+2. Check it: ``kubectl cnpg -n $NS psql game-db-2 -- -d "$DB_NAME"``.
+3. Stop the API (``kubectl -n $NS scale deployment/gamificationengine
+   --replicas=0``), set ``GAMIFICATIONENGINE_DB_HOST=game-db-2-rw`` and
+   ``GAMIFICATIONENGINE_CNPG_CLUSTER_NAME=game-db-2`` in ``.env``, then
+   ``./deploy-kubernetes.sh --api``.
+4. **Start backups for the new cluster** right away: add ``spec.plugins``
+   (archiving) to it with ``serverName: game-db-2`` (a new path; never the
+   old cluster's), and point its ``ScheduledBackup`` at it.
+5. Keep the old cluster until the new one has a backup, then delete it.
+
+Writes made to the old cluster after the restore point are not in the new
+one.
+
+Restore check
+-------------
+
+A backup only counts once it has been restored.
+``scripts/cnpg-restore-check.sh`` restores the latest backup into a
+throwaway one-instance cluster (``GAMIFICATIONENGINE_CNPG_RESTORE_CLUSTER_NAME``,
+default ``game-db-restore-test``, on the ``<storage class>-delete`` class so
+its volumes go with it), compares it with the live database and deletes it
+(``--keep`` to inspect it). It fails when the restore fails, the schema
+version differs, a table is missing, or the restored database is empty; it
+reports how long the restore took, row counts and the newest award on both
+sides. Run it monthly and after any change to the backup configuration.
+
+Backup monitoring
+-----------------
+
+``kubernetes/configmaps/db-prometheus-rules.yaml`` (unit-tested with
+``promtool`` in ``tests/prometheus/db-rules.test.yml``) needs the database
+instances scraped (``./deploy-kubernetes.sh --cnpg-monitoring`` with the
+Prometheus Operator, or the scrape config in :doc:`observability`):
+
+.. list-table::
+   :header-rows: 1
+   :widths: 32 68
+
+   * - Alert
+     - Fires when
+   * - ``CnpgWalArchivingFailing``
+     - The latest WAL archiving attempt failed (critical, 5 min).
+   * - ``CnpgWalArchivingStalled``
+     - No WAL archived for 15 minutes although archiving is on (critical).
+   * - ``CnpgWalArchiveBacklog``
+     - More than 10 WAL segments wait to be archived (15 min).
+   * - ``CnpgBackupTooOld``
+     - The newest base backup is older than 26 hours (30 min).
+   * - ``CnpgLastBackupFailed``
+     - The latest base backup failed (5 min).
+
+The backup alerts use the plugin's ``barman_cloud_cloudnative_pg_io_*``
+metrics and stay silent until backups are configured; the archiving alerts
+stay silent while archiving is off.
 
 Redis outages
 =============
