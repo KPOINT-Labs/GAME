@@ -253,7 +253,28 @@ def test_non_numeric_bonus_is_rejected_and_nothing_is_stored(
         },
     )
 
-    assert response.status_code >= 400, response.text
+    # The DSL error keeps its 400 and code (not a generic 500).
+    assert response.status_code == 400, response.text
+    assert "DSL_ADD_BONUS_NOT_NUMBER" in response.text
+    assert _stored_breakdowns(postgres_engine, user) == []
+
+
+def test_fractional_fixed_bonus_is_rejected_and_nothing_is_stored(
+    breakdown_e2e: BreakdownE2E, postgres_engine: Engine
+):
+    user = breakdown_e2e.user("fraction")
+
+    response = breakdown_e2e.call(
+        "POST",
+        f"/games/{breakdown_e2e.game_id}/tasks/{TASK}/points",
+        json={
+            "externalUserId": user,
+            "data": {"shared": True, "streak_days": 1, "quality": 0.5},
+        },
+    )
+
+    assert response.status_code == 400, response.text
+    assert "DSL_ADD_BONUS_NOT_INTEGER" in response.text
     assert _stored_breakdowns(postgres_engine, user) == []
 
 

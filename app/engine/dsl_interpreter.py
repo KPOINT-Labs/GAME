@@ -396,12 +396,28 @@ class DslInterpreter:
                         "actualType": type(value).__name__,
                     },
                 )
+            mode = node.get("mode", BONUS_MODE_FIXED)
+            if mode == BONUS_MODE_FIXED and isinstance(value, float):
+                # Award points are stored as integers, so a fractional fixed
+                # bonus could be simulated but never persisted. Reject it
+                # here (simulate and real awards alike); store whole floats
+                # (2.0) as ints. A multiplier's factor may be fractional:
+                # its bonus is rounded in build_points_breakdown.
+                if not value.is_integer():
+                    raise DslExecutionError(
+                        detail=(
+                            "add_bonus.value must be a whole number of points "
+                            "for a fixed bonus."
+                        ),
+                        headers={"X-Node-Id": str(node.get("id"))},
+                        code="DSL_ADD_BONUS_NOT_INTEGER",
+                        params={"nodeId": node.get("id"), "value": value},
+                    )
+                value = int(value)
             # Resolved when assign_points knows the base: a multiplier is a
             # factor of it, and the same key added twice is summed into one
             # component (see build_points_breakdown).
-            state.bonuses.append(
-                (node["key"], node.get("mode", BONUS_MODE_FIXED), value)
-            )
+            state.bonuses.append((node["key"], mode, value))
             state.trace.append(
                 {
                     "nodeId": node.get("id"),

@@ -507,6 +507,68 @@ async def test_non_numeric_bonus_raises_execution_error():
 
 
 @pytest.mark.asyncio
+async def test_fractional_fixed_bonus_raises_execution_error():
+    # Award points are integers: a 0.5 bonus could be simulated but never
+    # stored, so it fails up front with its own code.
+    ast = _program(
+        [
+            _rule(
+                "r",
+                _lit("l", True),
+                [_bonus("b", "k", _data("d", "q")), _assign("a", _lit("v", 1))],
+            )
+        ]
+    )
+
+    with pytest.raises(DslExecutionError) as excinfo:
+        await _run(ast, data={"q": 0.5})
+
+    assert excinfo.value.code == "DSL_ADD_BONUS_NOT_INTEGER"
+    assert excinfo.value.params == {"nodeId": "b", "value": 0.5}
+
+
+@pytest.mark.asyncio
+async def test_whole_float_fixed_bonus_is_stored_as_int():
+    ast = _program(
+        [
+            _rule(
+                "r",
+                _lit("l", True),
+                [_bonus("b", "k", _data("d", "q")), _assign("a", _lit("v", 1))],
+            )
+        ]
+    )
+
+    result = await _run(ast, data={"q": 2.0})
+
+    assert result["points"] == 3
+    component = result["breakdown"]["components"][1]
+    assert component == {"key": "k", "points": 2}
+    assert isinstance(component["points"], int)
+
+
+@pytest.mark.asyncio
+async def test_fractional_multiplier_factor_is_allowed():
+    ast = _program(
+        [
+            _rule(
+                "r",
+                _lit("l", True),
+                [
+                    _bonus("b", "k", _lit("m", 1.5), "multiplier"),
+                    _assign("a", _lit("v", 5)),
+                ],
+            )
+        ]
+    )
+
+    result = await _run(ast)
+
+    assert result["points"] == 8
+    assert result["breakdown"] == _breakdown(("base", 5), ("k", 3))
+
+
+@pytest.mark.asyncio
 async def test_boolean_bonus_raises_execution_error():
     ast = _program(
         [

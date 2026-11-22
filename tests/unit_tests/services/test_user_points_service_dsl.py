@@ -284,3 +284,67 @@ class TestUserPointsServiceDslWiring(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertNotIn("breakdown", persisted.data)
+
+    async def test_custom_strategy_runtime_error_keeps_its_400_and_code(self):
+        """
+        A DSL runtime error during a real award (here a fractional fixed
+        bonus, which could never be stored as integer points) reaches the
+        caller as the DSL's own 400 with its code, as in simulate - not the
+        generic 500 used for unexpected strategy failures. Nothing is stored.
+        """
+        from app.core.exceptions import DslExecutionError
+
+        self.definition_service.get_strategy = AsyncMock(
+            return_value=StrategyDefinitionRead(
+                id=self.CUSTOM_STRATEGY_UUID,
+                realmId=self.API_KEY,
+                name="fractional_bonus",
+                description="",
+                type="DSL_FULL",
+                astJson={
+                    "type": "program",
+                    "id": "p",
+                    "rules": [
+                        {
+                            "type": "rule",
+                            "id": "r",
+                            "when": {"type": "literal", "id": "l", "value": True},
+                            "then": [
+                                {
+                                    "type": "add_bonus",
+                                    "id": "b",
+                                    "key": "quality",
+                                    "value": {
+                                        "type": "field",
+                                        "id": "f",
+                                        "path": "data.quality",
+                                    },
+                                },
+                                {
+                                    "type": "assign_points",
+                                    "id": "a",
+                                    "value": {
+                                        "type": "literal",
+                                        "id": "v",
+                                        "value": 10,
+                                    },
+                                    "case_name": "Completed",
+                                },
+                            ],
+                        }
+                    ],
+                },
+                version=1,
+                status="PUBLISHED",
+            )
+        )
+        schema = SimpleNamespace(externalUserId="user_1", data={"quality": 0.5})
+
+        with self.assertRaises(DslExecutionError) as ctx:
+            await self.service.assign_points_to_user(
+                self.GAME_UUID, "task-external-1", schema, False, self.API_KEY
+            )
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertEqual(ctx.exception.code, "DSL_ADD_BONUS_NOT_INTEGER")
+        self.user_points_repository.create.assert_not_awaited()

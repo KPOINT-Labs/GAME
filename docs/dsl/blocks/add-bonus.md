@@ -73,7 +73,10 @@ Without the streak the same share is 12 points (`base` 10, `quality` 2).
   base.
 * Award points are whole numbers, so a multiplier's bonus is rounded to
   whole points, .5 upwards (×1.5 on 5 points adds 3, for 8 in total; ×0.5
-  on 5 points gives 3). Fixed bonuses are used as given.
+  on 5 points gives 3).
+* A fixed bonus must be a whole number of points (`2.0` counts as `2`);
+  `0.5` fails with `DSL_ADD_BONUS_NOT_INTEGER`, in simulate and in real
+  awards alike. Wrap a computed value in `int(...)`, or use a multiplier.
 * The same key added more than once is one component holding the sum.
 * A negative fixed value works as a penalty.
 * `value` must evaluate to a number - `DSL_ADD_BONUS_NOT_NUMBER`
