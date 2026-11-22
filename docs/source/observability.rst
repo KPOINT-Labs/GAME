@@ -67,6 +67,22 @@ You get out of the box:
        (see below). **Non-zero = the sink is saturated**, not that scoring is
        at risk.
 
+* **Redis fallback metrics** (``app/services/redis_resilience.py``), by
+  ``component`` (``apikey_cache``, ``rate_limit``):
+
+.. list-table::
+   :header-rows: 1
+   :widths: 46 54
+
+   * - Metric
+     - Meaning
+   * - ``redis_unavailable_total``
+     - Times Redis became unavailable (an outage starting).
+   * - ``redis_fallback_total``
+     - Cache lookups and rate-limit counts served without Redis. **Non-zero
+       rate = degraded mode** (requests still succeed; see
+       :doc:`operations`, "Redis outages").
+
 The bundled Compose stack ships a pre-configured Prometheus that scrapes these
 without extra wiring.
 
@@ -275,6 +291,9 @@ What to alert on
    * - ``dsl_execution_log_dropped_total`` > 0
      - The trace sink is saturated; you're losing audit visibility (scoring is
        fine).
+   * - ``redis_fallback_total`` rate > 0
+     - Redis is down or unreachable; the API runs on the fallbacks. Alerted
+       by ``RedisUnavailableFallbackActive``.
    * - HTTP ``5xx`` rate
      - Backend errors; correlate with Sentry and the ``Logs`` audit trail.
        Alerted by ``ApiRoute5xxRateHigh``.

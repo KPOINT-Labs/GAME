@@ -66,6 +66,7 @@ def test_alert_rules_parse_and_kubernetes_copy_is_in_sync():
         "ApiRouteLatencyP95High",
         "ApiActivityLatencyP95High",
         "ApiRoute5xxRateHigh",
+        "RedisUnavailableFallbackActive",
     ]
     assert yaml.safe_load(config_map["data"]["api-rules.yml"]) == rules
 

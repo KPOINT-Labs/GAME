@@ -270,6 +270,17 @@ Only needed when a backend below is set to ``redis``.
    * - ``API_KEY_HEADER_CACHE_TTL_SECONDS``
      - ``5``
      - How long a key-validation result is cached.
+   * - ``REDIS_SOCKET_TIMEOUT_MS``
+     - ``500``
+     - Per-call timeout; Redis calls are never retried. On a timeout or
+       error the feature uses its fallback (see :doc:`operations`, "Redis
+       outages").
+   * - ``REDIS_CONNECT_TIMEOUT_MS``
+     - ``500``
+     - Timeout for opening a connection.
+   * - ``REDIS_FAILURE_COOLDOWN_SECONDS``
+     - ``5``
+     - After a Redis failure, skip Redis this long before trying it again.
 
 DSL engine limits
 =================

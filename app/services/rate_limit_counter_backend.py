@@ -9,6 +9,10 @@ a hot row in Postgres does not pay.
 
 Selection is driven by ``configs.ABUSE_PREVENTION_BACKEND`` and wired in
 ``app/core/container.py``.
+
+When Redis is unavailable at runtime the Redis backend counts in the
+database instead (its ``fallback``), so limits stay enforced; see
+``app/services/redis_resilience.py``.
 """
 
 from __future__ import annotations
@@ -18,6 +22,11 @@ from datetime import datetime, timezone
 from typing import Any, Optional, Protocol, runtime_checkable
 
 from app.repository.abuse_limit_counter_repository import AbuseLimitCounterRepository
+from app.services.redis_resilience import (
+    REDIS_UNAVAILABLE_ERRORS,
+    RedisCircuitBreaker,
+    build_redis_client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,11 +102,24 @@ class RedisRateLimitCounterBackend:
     The pipeline below batches both commands into a single round-trip and
     runs under ``MULTI/EXEC`` so other clients cannot observe a key without
     a TTL.
+
+    With a ``fallback`` backend, a Redis error (or an open ``circuit``) counts
+    the request there instead, so a Redis outage neither fails requests nor
+    lifts the limits. Counts start afresh in the fallback, so a bucket that
+    spans an outage can admit up to twice its limit once.
     """
 
-    def __init__(self, client, key_prefix: str = "game:rl:") -> None:
+    def __init__(
+        self,
+        client,
+        key_prefix: str = "game:rl:",
+        fallback: Optional[RateLimitCounterBackend] = None,
+        circuit: Optional[RedisCircuitBreaker] = None,
+    ) -> None:
         self._client = client
         self._key_prefix = key_prefix
+        self._fallback = fallback
+        self._circuit = circuit
 
     @staticmethod
     def _bucket_epoch(window_start: datetime) -> int:
@@ -167,26 +189,66 @@ class RedisRateLimitCounterBackend:
         Returns:
             int: The counter value after the increment.
         """
+        if self._fallback is not None and self._circuit and not self._circuit.allow():
+            return await self._use_fallback(
+                scope_type, scope_value, window_name, window_start, ttl_seconds
+            )
+
         key = self._build_key(scope_type, scope_value, window_name, window_start)
         ttl = max(1, int(ttl_seconds))
 
-        pipe = self._client.pipeline(transaction=True)
-        pipe.set(key, 0, ex=ttl, nx=True)
-        pipe.incr(key)
-        results = await pipe.execute()
+        try:
+            pipe = self._client.pipeline(transaction=True)
+            pipe.set(key, 0, ex=ttl, nx=True)
+            pipe.incr(key)
+            results = await pipe.execute()
+        except REDIS_UNAVAILABLE_ERRORS as exc:
+            if self._circuit:
+                self._circuit.record_failure(exc)
+            if self._fallback is None:
+                raise
+            return await self._use_fallback(
+                scope_type, scope_value, window_name, window_start, ttl_seconds
+            )
+        if self._circuit:
+            self._circuit.record_success()
         return int(results[1])
 
+    async def _use_fallback(
+        self,
+        scope_type: str,
+        scope_value: str,
+        window_name: str,
+        window_start: datetime,
+        ttl_seconds: int,
+    ) -> int:
+        """Count the request in the fallback backend (Redis unavailable)."""
+        if self._circuit:
+            self._circuit.count_fallback()
+        return await self._fallback.increment_and_get(
+            scope_type=scope_type,
+            scope_value=scope_value,
+            window_name=window_name,
+            window_start=window_start,
+            ttl_seconds=ttl_seconds,
+        )
 
-def build_redis_client_from_url(url: str) -> Any:
+
+def build_redis_client_from_url(
+    url: str,
+    socket_timeout_seconds: float = 0.5,
+    connect_timeout_seconds: float = 0.5,
+) -> Any:
     """
-    Build an async Redis client from a connection URL.
+    Build an async Redis client from a connection URL, with short timeouts
+    and no retries (see ``redis_resilience.build_redis_client``).
 
     Imported lazily so the ``redis`` package is only required when the Redis
     backend is actually selected -- callers running the DB backend never pay
     the dependency cost.
     """
     try:
-        from redis import asyncio as redis_asyncio
+        import redis  # noqa: F401
     except ImportError as exc:  # pragma: no cover - import guard
         raise RuntimeError(
             "ABUSE_PREVENTION_BACKEND=redis requires the 'redis' package. "
@@ -194,7 +256,7 @@ def build_redis_client_from_url(url: str) -> Any:
             "ABUSE_PREVENTION_BACKEND=database to keep the DB-backed limiter."
         ) from exc
 
-    return redis_asyncio.from_url(url, decode_responses=True)
+    return build_redis_client(url, socket_timeout_seconds, connect_timeout_seconds)
 
 
 def build_rate_limit_counter_backend(
@@ -202,12 +264,16 @@ def build_rate_limit_counter_backend(
     backend_name: str,
     redis_url: Optional[str],
     redis_key_prefix: str,
+    socket_timeout_seconds: float = 0.5,
+    connect_timeout_seconds: float = 0.5,
+    failure_cooldown_seconds: float = 5.0,
 ) -> RateLimitCounterBackend:
     """
     Select the configured backend. Falls back to the DB backend with a
     warning when Redis is requested but ``REDIS_URL`` is missing -- so a
     misconfigured deploy still rate-limits (just slower) instead of opening
-    the floodgates.
+    the floodgates. The Redis backend also counts in the database while Redis
+    is unavailable at runtime.
     """
     normalized = (backend_name or "database").strip().lower()
     if normalized == "redis":
@@ -217,6 +283,13 @@ def build_rate_limit_counter_backend(
                 "falling back to the database-backed counter."
             )
             return DatabaseRateLimitCounterBackend(repository)
-        client = build_redis_client_from_url(redis_url)
-        return RedisRateLimitCounterBackend(client, key_prefix=redis_key_prefix)
+        client = build_redis_client_from_url(
+            redis_url, socket_timeout_seconds, connect_timeout_seconds
+        )
+        return RedisRateLimitCounterBackend(
+            client,
+            key_prefix=redis_key_prefix,
+            fallback=DatabaseRateLimitCounterBackend(repository),
+            circuit=RedisCircuitBreaker("rate_limit", failure_cooldown_seconds),
+        )
     return DatabaseRateLimitCounterBackend(repository)

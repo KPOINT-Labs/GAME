@@ -389,6 +389,9 @@ class Container(containers.DeclarativeContainer):
         backend_name=configs.APIKEY_CACHE_BACKEND,
         redis_url=configs.REDIS_URL,
         redis_key_prefix=configs.APIKEY_CACHE_REDIS_KEY_PREFIX,
+        socket_timeout_seconds=configs.REDIS_SOCKET_TIMEOUT_MS / 1000,
+        connect_timeout_seconds=configs.REDIS_CONNECT_TIMEOUT_MS / 1000,
+        failure_cooldown_seconds=configs.REDIS_FAILURE_COOLDOWN_SECONDS,
     )
 
     apikey_service = providers.Factory(
@@ -408,6 +411,9 @@ class Container(containers.DeclarativeContainer):
         backend_name=configs.ABUSE_PREVENTION_BACKEND,
         redis_url=configs.REDIS_URL,
         redis_key_prefix=configs.RATE_LIMIT_REDIS_KEY_PREFIX,
+        socket_timeout_seconds=configs.REDIS_SOCKET_TIMEOUT_MS / 1000,
+        connect_timeout_seconds=configs.REDIS_CONNECT_TIMEOUT_MS / 1000,
+        failure_cooldown_seconds=configs.REDIS_FAILURE_COOLDOWN_SECONDS,
     )
 
     abuse_prevention_service = providers.Factory(
