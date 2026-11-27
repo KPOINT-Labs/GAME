@@ -170,6 +170,40 @@ class TestObserverPersistence(unittest.IsolatedAsyncioTestCase):
         finally:
             live.DSL_EXECUTION_LOG_SAMPLE_RATE = original
 
+    async def test_rejected_run_sampled_like_ok_not_always_kept(self):
+        # A reject refuses an event as designed; it is not a failure, so it
+        # is sampled like an ok run instead of always being persisted.
+        from app.core.config import configs as live
+
+        original = live.DSL_EXECUTION_LOG_SAMPLE_RATE
+        live.DSL_EXECUTION_LOG_SAMPLE_RATE = 0.0
+        try:
+            repo = _RecordingRepo()
+            observer = DslExecutionObserver(
+                execution_log_repository=repo,
+                rng=random.Random(0),
+            )
+            await observer.record(
+                strategyId="s3",
+                strategyVersion=1,
+                strategyType="DSL_FULL",
+                realmId="realm-a",
+                externalGameId=None,
+                externalTaskId=None,
+                externalUserId=None,
+                status="rejected",
+                errorCode="MILESTONE_NOT_REACHED",
+                points=None,
+                caseName=None,
+                durationMs=5.0,
+                nodesExecuted=3,
+                trace=[],
+            )
+            await observer.drain()
+            self.assertEqual(repo.rows, [])
+        finally:
+            live.DSL_EXECUTION_LOG_SAMPLE_RATE = original
+
     async def test_log_disabled_skips_persistence(self):
         from app.core.config import configs as live
 

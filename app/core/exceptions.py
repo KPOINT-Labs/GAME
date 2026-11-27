@@ -195,6 +195,30 @@ class TooManyRequestsError(HTTPException):
         super().__init__(status.HTTP_429_TOO_MANY_REQUESTS, detail, headers)
 
 
+class UnprocessableEntityError(HTTPException):
+    """
+    Exception raised when a well-formed request is refused by the rules.
+
+    Attributes:
+        detail (Any): The detail message for the exception.
+        headers (Optional[Dict[str, Any]]): The headers for the exception
+          response.
+    """
+
+    def __init__(
+        self, detail: Any = None, headers: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Initializes the UnprocessableEntityError with the provided details.
+
+        Args:
+            detail (Any, optional): The detail message for the exception.
+            headers (Optional[Dict[str, Any]], optional): The headers for the
+              exception response.
+        """
+        super().__init__(status.HTTP_422_UNPROCESSABLE_ENTITY, detail, headers)
+
+
 # HTTP_400_BAD_REQUEST
 
 
@@ -296,3 +320,27 @@ class DslLimitExceededError(_DslErrorMixin, PreconditionFailedError):
 
 class DslTimeoutError(_DslErrorMixin, PreconditionFailedError):
     """AST execution exceeded the configured wall-clock budget."""
+
+
+class DslRejectedError(_DslErrorMixin, UnprocessableEntityError):
+    """
+    A ``reject`` statement refused the event (code ``DSL_REJECTED``).
+
+    Not a strategy failure: the request was valid and the rules turned it
+    away, so nothing is recorded. ``params`` carries the designer's
+    ``reason`` and the rejecting ``nodeId``. ``trace`` holds the run's
+    execution trace up to the reject, for the observer; it is not part of
+    the response body.
+    """
+
+    def __init__(
+        self,
+        detail: Any = None,
+        headers: Optional[Dict[str, Any]] = None,
+        *,
+        code: Optional[str] = None,
+        params: Optional[Dict[str, Any]] = None,
+        trace: Optional[list] = None,
+    ) -> None:
+        super().__init__(detail=detail, headers=headers, code=code, params=params)
+        self.trace = list(trace or [])

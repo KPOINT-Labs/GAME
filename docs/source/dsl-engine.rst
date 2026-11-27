@@ -97,6 +97,14 @@ Execution semantics mirror the built-in ``default`` strategy:
   on ``userpoints.breakdown``. A run that ends in ``default`` (no rule
   assigned points) or with no ``assign_points`` discards its bonuses.
   ``DSL_EXTEND`` results carry no breakdown.
+* ``reject`` (main ``rules`` or ``default``) refuses the event. The run stops
+  and raises ``DslRejectedError``: HTTP 422 with code ``DSL_REJECTED`` and
+  ``params: {"reason": <the node's reason>, "nodeId": ...}``. Nothing is
+  recorded (no award, no wallet change), so the idempotency key stays unused
+  and a later accepted event can still earn the points. Bonuses and callback
+  data gathered before it are dropped. ``reason`` is 1-64 characters of
+  ``[A-Z0-9_]``, a letter first, not starting with ``DSL_``. The observer
+  logs the run with status ``rejected``, which is not counted as an error.
 
 Execution modes
 ===============

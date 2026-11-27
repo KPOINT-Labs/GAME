@@ -85,6 +85,10 @@
     "pointsBreakdown": {
       "title": "Desglose de puntos",
       "body": "Cómo se componen los puntos de una asignación; se guarda junto a ella. Cuando se ejecuta el 'asignar puntos' de una regla, su valor es la base y cada 'sumar bono' añade un componente con nombre: puntos fijos o un múltiplo de la base (×2 la duplica). También cuentan los bonos de reglas anteriores que se cumplieron. La asignación por defecto (ninguna regla asignó puntos) no recibe bonos."
+    },
+    "reject": {
+      "title": "Rechazar",
+      "body": "Una regla puede rechazar un evento con un bloque 'rechazar' y un código de motivo. La solicitud de asignación falla entonces con el error DSL_REJECTED (HTTP 422) y el motivo, y no se registra nada: ni puntos, ni cambios en el monedero, y el id del evento queda sin usar, así que un evento válido posterior aún puede ganar los puntos. Es distinto de asignar 0 puntos, que sí se registra."
     }
   }
 }

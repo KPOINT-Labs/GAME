@@ -528,3 +528,52 @@ describe('workspaceToAst - add_bonus', () => {
     })
   })
 })
+
+describe('workspaceToAst - reject', () => {
+  it('emits reject inside a rule', () => {
+    const ws = makeWorkspace()
+    const rule = newBlock(ws, 'gd_rule', 'r1')
+    const when = newBlock(ws, 'gd_literal_number', 'l1')
+    when.setFieldValue('1', 'VALUE')
+    connectChildToInput(rule, 'WHEN', when)
+    const reject = newBlock(ws, 'gd_reject', 'rej1')
+    reject.setFieldValue('MILESTONE_NOT_REACHED', 'REASON')
+    connectChildStatement(rule, 'THEN', reject)
+
+    const ast = workspaceToAst(ws)
+
+    expect(ast.rules[0].then).toEqual([
+      { type: 'reject', id: 'rej1', reason: 'MILESTONE_NOT_REACHED' },
+    ])
+  })
+
+  it('uses the default reason when the field is left as is', () => {
+    const ws = makeWorkspace()
+    const rule = newBlock(ws, 'gd_rule', 'r1')
+    const reject = newBlock(ws, 'gd_reject', 'rej1')
+    connectChildStatement(rule, 'THEN', reject)
+
+    const ast = workspaceToAst(ws)
+
+    expect(ast.rules[0].then[0]).toEqual({ type: 'reject', id: 'rej1', reason: 'NOT_ALLOWED' })
+  })
+
+  it('turns a floating reject into the default statement', () => {
+    const ws = makeWorkspace()
+    const reject = newBlock(ws, 'gd_reject', 'rejd')
+    reject.setFieldValue('NO_RULE_MATCHED', 'REASON')
+
+    const ast = workspaceToAst(ws)
+
+    expect(ast.default).toEqual({ type: 'reject', id: 'rejd', reason: 'NO_RULE_MATCHED' })
+    expect(validateAst(ast).ok).toBe(true)
+  })
+
+  it('has no next connection, since it ends the run', () => {
+    const ws = makeWorkspace()
+    const reject = newBlock(ws, 'gd_reject', 'rej1')
+
+    expect(reject.nextConnection).toBeNull()
+    expect(reject.previousConnection).not.toBeNull()
+  })
+})

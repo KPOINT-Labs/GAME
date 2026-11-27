@@ -348,3 +348,114 @@ class TestUserPointsServiceDslWiring(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.exception.status_code, 400)
         self.assertEqual(ctx.exception.code, "DSL_ADD_BONUS_NOT_INTEGER")
         self.user_points_repository.create.assert_not_awaited()
+
+    def _use_milestone_strategy(self):
+        """A DSL_FULL strategy that rejects events under 30 watched seconds."""
+        self.definition_service.get_strategy = AsyncMock(
+            return_value=StrategyDefinitionRead(
+                id=self.CUSTOM_STRATEGY_UUID,
+                realmId=self.API_KEY,
+                name="milestone_guard",
+                description="",
+                type="DSL_FULL",
+                astJson={
+                    "type": "program",
+                    "id": "p",
+                    "rules": [
+                        {
+                            "type": "rule",
+                            "id": "r",
+                            "when": {
+                                "type": "compare",
+                                "id": "c",
+                                "op": "<",
+                                "left": {
+                                    "type": "field",
+                                    "id": "f",
+                                    "path": "data.watchedSeconds",
+                                },
+                                "right": {"type": "literal", "id": "t", "value": 30},
+                            },
+                            "then": [
+                                {
+                                    "type": "reject",
+                                    "id": "rej",
+                                    "reason": "MILESTONE_NOT_REACHED",
+                                }
+                            ],
+                        }
+                    ],
+                    "default": {
+                        "type": "assign_points",
+                        "id": "a",
+                        "value": {"type": "literal", "id": "v", "value": 10},
+                        "case_name": "Milestone",
+                    },
+                },
+                version=1,
+                status="PUBLISHED",
+            )
+        )
+
+    async def test_custom_strategy_reject_returns_422_and_saves_nothing(self):
+        """
+        A ``reject`` statement fails the award with 422 ``DSL_REJECTED`` and
+        the designer's reason. No award, wallet change or transaction is
+        written, so the idempotency key is never stored.
+        """
+        from app.core.exceptions import DslRejectedError
+
+        self._use_milestone_strategy()
+        schema = SimpleNamespace(
+            externalUserId="user_1",
+            data={"watchedSeconds": 12, "eventId": "evt-1"},
+        )
+
+        with self.assertRaises(DslRejectedError) as ctx:
+            await self.service.assign_points_to_user(
+                self.GAME_UUID, "task-external-1", schema, False, self.API_KEY
+            )
+
+        self.assertEqual(ctx.exception.status_code, 422)
+        self.assertEqual(ctx.exception.code, "DSL_REJECTED")
+        self.assertEqual(ctx.exception.params["reason"], "MILESTONE_NOT_REACHED")
+        self.user_points_repository.create.assert_not_awaited()
+        self.wallet_repository.upsert_points_balance.assert_not_awaited()
+        self.wallet_transaction_repository.create.assert_not_awaited()
+        self.user_points_repository.read_by_user_task_and_idempotency.assert_not_awaited()
+
+    async def test_custom_strategy_awards_once_the_event_is_no_longer_rejected(
+        self,
+    ):
+        """
+        After a rejected event, a valid event with the same idempotency key
+        is scored and saved normally.
+        """
+        from app.core.exceptions import DslRejectedError
+
+        self._use_milestone_strategy()
+
+        with self.assertRaises(DslRejectedError):
+            await self.service.assign_points_to_user(
+                self.GAME_UUID,
+                "task-external-1",
+                SimpleNamespace(
+                    externalUserId="user_1",
+                    data={"watchedSeconds": 12, "eventId": "evt-1"},
+                ),
+                False,
+                self.API_KEY,
+            )
+        response = await self.service.assign_points_to_user(
+            self.GAME_UUID,
+            "task-external-1",
+            SimpleNamespace(
+                externalUserId="user_1",
+                data={"watchedSeconds": 45, "eventId": "evt-1"},
+            ),
+            False,
+            self.API_KEY,
+        )
+
+        self.assertEqual(response.points, 10)
+        self.user_points_repository.create.assert_awaited_once()

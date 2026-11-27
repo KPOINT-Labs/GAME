@@ -32,6 +32,7 @@ const BLOCK_TO_AST = {
   gd_assign_points: blockToAssignPoints,
   gd_set_callback_data: blockToSetCallbackData,
   gd_add_bonus: blockToAddBonus,
+  gd_reject: blockToReject,
   gd_set_data: blockToSetData,
   gd_veto: blockToVeto,
   gd_set_points: blockToSetPoints,
@@ -45,8 +46,8 @@ const BLOCK_TO_AST = {
  * * ``gd_rule`` blocks → ``program.rules[]`` (DSL_FULL behaviour).
  * * ``gd_pre_rule`` blocks → ``program.pre_rules[]``.
  * * ``gd_post_rule`` blocks → ``program.post_rules[]``.
- * * A floating ``gd_assign_points`` (no previous connection) →
- *   ``program.default``.
+ * * A floating ``gd_assign_points`` or ``gd_reject`` (no previous
+ *   connection) → ``program.default``.
  * * ``gd_parent_variable_override`` blocks → ``program.parent_variables``
  *   map.
  *
@@ -76,6 +77,9 @@ export function workspaceToAst(workspace) {
       // A floating assign_points outside any rule is the default branch.
       // Limit to one: extras silently win-last (the order Blockly returns).
       defaultStmt = blockToAssignPoints(block)
+    } else if (block.type === 'gd_reject' && !block.getPreviousBlock()) {
+      // A floating reject is a default that refuses unmatched events.
+      defaultStmt = blockToReject(block)
     }
     // Other top-level blocks are ignored - they're orphans waiting to be
     // wired up. We don't crash on them so the designer can keep drafting.
@@ -165,6 +169,7 @@ function blockToStatement(block) {
   if (block.type === 'gd_assign_points') return blockToAssignPoints(block)
   if (block.type === 'gd_set_callback_data') return blockToSetCallbackData(block)
   if (block.type === 'gd_add_bonus') return blockToAddBonus(block)
+  if (block.type === 'gd_reject') return blockToReject(block)
   // Statements.
   if (block.type === 'gd_set_data') return blockToSetData(block)
   if (block.type === 'gd_veto') return blockToVeto(block)
@@ -212,6 +217,16 @@ function blockToAddBonus(block) {
   }
   if (block.getFieldValue('MODE') === 'multiplier') node.mode = 'multiplier'
   return node
+}
+
+// Refuses the event (422 DSL_REJECTED, nothing recorded). The reason is a
+// fixed upper-case code the caller can branch on.
+function blockToReject(block) {
+  return {
+    type: 'reject',
+    id: block.id,
+    reason: block.getFieldValue('REASON') || '',
+  }
 }
 
 // Statement converters

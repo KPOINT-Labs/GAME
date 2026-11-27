@@ -59,6 +59,7 @@ from app.engine.dsl_ast import (
     NODE_NOT,
     NODE_OR,
     NODE_PROGRAM,
+    NODE_REJECT,
     NODE_RETURN,
     NODE_RULE,
     NODE_SET_CALLBACK_DATA,
@@ -67,6 +68,7 @@ from app.engine.dsl_ast import (
     NODE_SET_POINTS,
     NODE_VETO,
     PARENT_VARIABLES_KEY,
+    REJECT_REASON_MAX_LEN,
     STATEMENT_ALLOWED_CONTEXTS,
     STATEMENT_NODE_TYPES,
     is_known_field_path,
@@ -74,6 +76,7 @@ from app.engine.dsl_ast import (
     is_valid_bonus_key,
     is_valid_case_name,
     is_valid_data_path,
+    is_valid_reject_reason,
 )
 
 _LITERAL_TYPES = (bool, int, float, str, type(None))
@@ -941,6 +944,22 @@ def _validate_statement(
             depth=depth + 1,
             context=context,
         )
+        return
+
+    if ntype == NODE_REJECT:
+        # Refuses the event (422 DSL_REJECTED, nothing recorded). The
+        # reason is a fixed code, not an expression, so callers can rely
+        # on the set of reasons a strategy can return.
+        _assert_keys(node, ("reason",), node_id=nid)
+        if not is_valid_reject_reason(node["reason"]):
+            raise DslValidationError(
+                detail=(
+                    "reject.reason must be 1-"
+                    f"{REJECT_REASON_MAX_LEN} characters of [A-Z0-9_], "
+                    "start with a letter and not start with 'DSL_'."
+                ),
+                headers={"X-Node-Id": nid},
+            )
         return
 
     if ntype == NODE_RETURN:

@@ -58,6 +58,7 @@ const formatNum = (value, digits = 0) =>
 
 const STATUS_COLORS = {
   ok: 'success',
+  rejected: 'primary',
   error: 'danger',
   timeout: 'warning',
   limit: 'info',
@@ -201,7 +202,7 @@ const StrategyObservabilityView = () => {
     navigate(`/strategies/compare${target}`)
   }
 
-  // Stacked status bar - proportions for ok / error / timeout / limit.
+  // Stacked status bar - proportions for ok / rejected / error / timeout / limit.
   // CProgressStacked rejects 0-value children silently, so filter out
   // empties before mapping (otherwise the gaps render as wide separators).
   const statusBars = useMemo(() => {
@@ -210,6 +211,12 @@ const StrategyObservabilityView = () => {
     if (!sb.total) return []
     return [
       { key: 'ok', label: t('observability.labels.ok'), color: 'success', count: sb.ok },
+      {
+        key: 'rejected',
+        label: t('observability.labels.rejected'),
+        color: 'primary',
+        count: sb.rejected,
+      },
       { key: 'error', label: t('observability.labels.error'), color: 'danger', count: sb.error },
       {
         key: 'timeout',

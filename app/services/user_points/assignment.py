@@ -10,6 +10,7 @@ import logging
 from app.core.exceptions import (
     DslExecutionError,
     DslLimitExceededError,
+    DslRejectedError,
     DslTimeoutError,
     DslValidationError,
     InternalServerError,
@@ -267,6 +268,18 @@ class PointsAssignmentMixin(PointsPersistenceMixin):
             )
             if callbackData is not None:
                 data_to_add["callbackData"] = callbackData
+        except DslRejectedError as exc:
+            # A reject statement refused the event: 422 DSL_REJECTED, and
+            # nothing below runs, so no award is saved and the idempotency
+            # key stays unused for a later valid event.
+            logger.info(
+                "DSL strategy rejected event for externalTaskId=%s "
+                "externalUserId=%s: %s",
+                externalTaskId,
+                externalUserId,
+                exc.params.get("reason"),
+            )
+            raise
         except (
             DslExecutionError,
             DslLimitExceededError,

@@ -23,6 +23,8 @@ import {
   FUNC_NAMES,
   PARENT_FIELD_PATHS,
   PARENT_VARIABLE_KEY_PREFIX,
+  REJECT_REASON_REGEX,
+  RESERVED_REJECT_REASON_PREFIX,
   STATEMENT_ALLOWED_CONTEXTS,
 } from './whitelists'
 
@@ -40,6 +42,7 @@ const STATEMENT_TYPES = new Set([
   'set_points',
   'set_case_name',
   'add_bonus',
+  'reject',
 ])
 
 const PARENT_FIELD_PATH_SET = new Set(PARENT_FIELD_PATHS)
@@ -210,6 +213,20 @@ function validateStatement(node, errors, nodeCount, context = 'rule') {
       fail(errors, node.id, `add_bonus.mode must be one of: ${BONUS_MODES.join(', ')}.`)
     }
     validateExpression(node.value, errors, nodeCount, context)
+    return
+  }
+  if (node.type === 'reject') {
+    if (
+      typeof node.reason !== 'string' ||
+      !REJECT_REASON_REGEX.test(node.reason) ||
+      node.reason.startsWith(RESERVED_REJECT_REASON_PREFIX)
+    ) {
+      fail(
+        errors,
+        node.id,
+        `reject.reason must be 1-64 characters of [A-Z0-9_], start with a letter and not start with '${RESERVED_REJECT_REASON_PREFIX}'.`,
+      )
+    }
     return
   }
   // DSL_EXTEND statements ---------------------------------

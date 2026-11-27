@@ -85,6 +85,10 @@
     "pointsBreakdown": {
       "title": "Points breakdown",
       "body": "How an award's points add up, stored with the award. When a rule's 'assign points' fires, its value is the base and each 'add bonus' adds a named component on top: fixed points, or a multiple of the base (×2 doubles it). Bonuses from earlier rules that matched count too. The fallback assign (no rule assigned points) gets no bonuses."
+    },
+    "reject": {
+      "title": "Reject",
+      "body": "A rule can refuse an event with a 'reject' block and a reason code. The award request then fails with error DSL_REJECTED (HTTP 422) and the reason, and nothing is recorded: no points, no wallet change, and the event id stays unused, so a later valid event can still earn the points. Different from awarding 0 points, which is recorded."
     }
   }
 }

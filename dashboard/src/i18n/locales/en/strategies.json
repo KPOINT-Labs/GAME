@@ -236,6 +236,7 @@
     "labels": {
       "total": "Total",
       "ok": "Ok",
+      "rejected": "Rejected",
       "error": "Error",
       "timeout": "Timeout",
       "limit": "Limit",

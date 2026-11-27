@@ -17,5 +17,6 @@
   "DSL_TIMEOUT": "Simulation took more than {{timeoutMs}}ms and was interrupted.",
   "DSL_UNKNOWN_STATEMENT": "Unknown statement node type: '{{nodeType}}' (node {{nodeId}}).",
   "DSL_ADD_BONUS_NOT_NUMBER": "'add bonus' value must be a number (got: {{actualType}}, node {{nodeId}}).",
-  "DSL_ADD_BONUS_NOT_INTEGER": "'add bonus' in points must be a whole number (got: {{value}}, node {{nodeId}}). Use int(...) or a multiplier."
+  "DSL_ADD_BONUS_NOT_INTEGER": "'add bonus' in points must be a whole number (got: {{value}}, node {{nodeId}}). Use int(...) or a multiplier.",
+  "DSL_REJECTED": "The strategy rejected this event: {{reason}} (node {{nodeId}}). Nothing would be recorded."
 }

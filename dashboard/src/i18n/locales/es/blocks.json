@@ -23,7 +23,8 @@
     "gd_parent_variable_override": "Sobrescribe una variable_* del padre antes de su ejecución.",
     "gd_rule_elseif": "Agrega una rama 'si no, si': una condición extra que se evalúa cuando las anteriores no se cumplen.",
     "gd_rule_else": "Agrega una rama 'si no': se ejecuta cuando ninguna condición anterior se cumplió.",
-    "gd_add_bonus": "Suma un bono con nombre a los puntos del 'asignar puntos' de una regla: puntos fijos o un múltiplo de los puntos base (×2 = puntos dobles). No termina la regla. No se aplica cuando solo se ejecuta la asignación por defecto. Cada bono se guarda en el desglose de puntos de la asignación."
+    "gd_add_bonus": "Suma un bono con nombre a los puntos del 'asignar puntos' de una regla: puntos fijos o un múltiplo de los puntos base (×2 = puntos dobles). No termina la regla. No se aplica cuando solo se ejecuta la asignación por defecto. Cada bono se guarda en el desglose de puntos de la asignación.",
+    "gd_reject": "Rechaza el evento con un código de motivo (p. ej. MILESTONE_NOT_REACHED). La solicitud de asignación falla con el error DSL_REJECTED y no se registra nada, así que el mismo evento aún puede ganar puntos más tarde. Termina la ejecución: se descartan los bonos y datos de callback reunidos antes. Úsalo dentro de una regla, o suelto como respuesta por defecto para eventos que ninguna regla cumplió."
   },
   "labels": {
     "when": "cuando",
@@ -54,7 +55,8 @@
     "override": "override",
     "addBonus": "sumar bono",
     "bonusPoints": "puntos",
-    "bonusTimesBase": "× puntos base"
+    "bonusTimesBase": "× puntos base",
+    "rejectWithReason": "rechazar con motivo"
   },
   "fieldsTable": {
     "title": "Campos disponibles",

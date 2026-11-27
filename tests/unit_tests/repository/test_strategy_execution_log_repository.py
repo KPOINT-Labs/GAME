@@ -176,3 +176,37 @@ async def test_time_window_filter_excludes_rows_before_since(repo, seeded):
 async def test_aggregations_scope_to_strategy_id(repo, seeded):
     out = await repo.count_by_status(strategyId="s2")
     assert out == {"ok": 1}
+
+
+@pytest.mark.asyncio
+async def test_rejected_runs_count_by_status_but_not_as_error_codes(repo, seeded):
+    # A reject's errorCode is the designer's reason, not a failure code.
+    await repo.insert_row(
+        StrategyExecutionLog(
+            strategyId="s1",
+            strategyVersion=1,
+            strategyType="DSL_FULL",
+            realmId="realm-a",
+            externalGameId=None,
+            externalTaskId=None,
+            externalUserId=None,
+            status="rejected",
+            errorCode="MILESTONE_NOT_REACHED",
+            points=None,
+            caseName=None,
+            durationMs=3.0,
+            nodesExecuted=4,
+            trace=None,
+            sampled=True,
+            parentStrategyId=None,
+            notes=None,
+            created_at=seeded + timedelta(minutes=9),
+        )
+    )
+
+    statuses = await repo.count_by_status(strategyId="s1")
+    codes = {row["code"] for row in await repo.count_by_error_code(strategyId="s1")}
+
+    assert statuses["rejected"] == 1
+    assert "MILESTONE_NOT_REACHED" not in codes
+    assert codes == {"DSL_ARITH_DIV_BY_ZERO", "DSL_FIELD_MISSING", "DSL_TIMEOUT"}

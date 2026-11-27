@@ -846,6 +846,43 @@ class TestGamesEndpoints(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, {"points": 1})
 
+    async def test_assign_points_to_user_rejected_keeps_422_and_logs_as_info(self):
+        from app.core.exceptions import DslRejectedError
+
+        rejected = DslRejectedError(
+            detail="Event rejected by strategy: MILESTONE_NOT_REACHED",
+            code="DSL_REJECTED",
+            params={"reason": "MILESTONE_NOT_REACHED", "nodeId": "rej"},
+        )
+        service = AsyncMock()
+        service.assign_points_to_user = AsyncMock(side_effect=rejected)
+        audit = self._audit(api_key="api-key-1", oauth_user_id=None)
+        audit.info = AsyncMock()
+        audit.error = AsyncMock()
+
+        with self.assertLogs("app.api.v1.endpoints.games_points", "INFO") as logs:
+            with self.assertRaises(DslRejectedError) as ctx:
+                await games.assign_points_to_user(
+                    gameId=uuid4(),
+                    externalTaskId="task-1",
+                    schema=_SchemaWithoutSimulated("u1"),
+                    request=self._request(),
+                    service=service,
+                    abuse_prevention_service=self._abuse_service(),
+                    audit=audit,
+                )
+
+        self.assertIs(ctx.exception, rejected)
+        self.assertEqual(ctx.exception.status_code, 422)
+        self.assertEqual(ctx.exception.detail["code"], "DSL_REJECTED")
+        audit.error.assert_not_awaited()
+        audit.info.assert_any_await(
+            "Points assignment rejected by strategy",
+            unittest.mock.ANY,
+        )
+        self.assertTrue(all(record.levelname == "INFO" for record in logs.records))
+        self.assertTrue(all(record.exc_info is None for record in logs.records))
+
     async def test_assign_points_to_user_defaults_simulated_flag_to_false(self):
         game_id = uuid4()
         schema = _SchemaWithoutSimulated("u2")

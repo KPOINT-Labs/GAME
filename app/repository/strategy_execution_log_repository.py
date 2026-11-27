@@ -106,7 +106,7 @@ class StrategyExecutionLogRepository(BaseRepository):
         sinceDt: Optional[datetime] = None,
         untilDt: Optional[datetime] = None,
     ) -> Dict[str, int]:
-        """Counts grouped by ``status`` (ok/error/timeout/limit)."""
+        """Counts grouped by ``status`` (ok/rejected/error/timeout/limit)."""
         stmt = select(self.model.status, func.count()).group_by(self.model.status)
         stmt = self._apply_window(stmt, strategyId, sinceDt, untilDt)
         async with self.session_factory() as session:
@@ -121,10 +121,15 @@ class StrategyExecutionLogRepository(BaseRepository):
         untilDt: Optional[datetime] = None,
         limit: int = 10,
     ) -> List[Dict[str, Any]]:
-        """Top error codes by frequency. Most failures share one code."""
+        """Top error codes by frequency. Most failures share one code.
+
+        Rejected runs are left out: their ``errorCode`` is the reject
+        reason, which is not a failure.
+        """
         stmt = (
             select(self.model.errorCode, func.count())
             .where(self.model.errorCode.is_not(None))
+            .where(self.model.status != "rejected")
             .group_by(self.model.errorCode)
             .order_by(func.count().desc())
             .limit(min(max(limit, 1), 50))

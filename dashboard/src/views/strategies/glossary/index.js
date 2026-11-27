@@ -23,6 +23,7 @@ export const GLOSSARY_TERMS = [
   { id: 'callbackData', related: ['caseName', 'dataField'], blockSlug: 'set-callback-data' },
   { id: 'dataField', related: ['callbackData'], blockSlug: 'field-data' },
   { id: 'pointsBreakdown', related: ['caseName', 'callbackData'], blockSlug: 'add-bonus' },
+  { id: 'reject', related: ['rule', 'veto'], blockSlug: 'reject' },
   // Extension model
   { id: 'parentStrategy', related: ['dslExtend', 'parentOverride'] },
   {
@@ -62,6 +63,7 @@ export const BLOCK_TO_TERM = {
   gd_set_case_name: 'caseName',
   gd_set_callback_data: 'callbackData',
   gd_add_bonus: 'pointsBreakdown',
+  gd_reject: 'reject',
   gd_set_data: 'dataField',
   gd_set_points: 'postRule',
 }

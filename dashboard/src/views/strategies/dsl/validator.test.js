@@ -788,3 +788,57 @@ describe('validateAst - add_bonus', () => {
     expect(errors[0].message).toMatch(/add_bonus\.mode/)
   })
 })
+
+describe('validateAst - reject', () => {
+  const reject = (reason, id = 'rej1') => ({ type: 'reject', id, reason })
+  const program = (stmt, section = 'rules') => {
+    const ast = { type: 'program', id: 'p', rules: [] }
+    ast[section] = [
+      {
+        type: 'rule',
+        id: 'r1',
+        when: { type: 'literal', id: 'lt', value: true },
+        then: [stmt],
+      },
+    ]
+    return ast
+  }
+
+  it('accepts reject in a main rule', () => {
+    _ok(program(reject('MILESTONE_NOT_REACHED')))
+  })
+
+  it('accepts reject as the default statement', () => {
+    _ok({ type: 'program', id: 'p', rules: [], default: reject('NO_RULE_MATCHED') })
+  })
+
+  it.each(['lower', 'Mixed', '2_FAST', '_X', 'HAS-DASH', 'DSL_REJECTED', '', 'A'.repeat(65), 5])(
+    'rejects reason %j',
+    (reason) => {
+      const errors = _errors(program(reject(reason)))
+      expect(errors[0].nodeId).toBe('rej1')
+      expect(errors[0].message).toMatch(/reject\.reason/)
+    },
+  )
+
+  it.each(['pre_rules', 'post_rules'])('rejects reject inside %s', (section) => {
+    const ast = program(reject('NOPE'), section)
+    ast.rules = [
+      {
+        type: 'rule',
+        id: 'r0',
+        when: { type: 'literal', id: 'l0', value: true },
+        then: [
+          {
+            type: 'assign_points',
+            id: 'a0',
+            value: { type: 'literal', id: 'v0', value: 1 },
+            case_name: 'Ok',
+          },
+        ],
+      },
+    ]
+    const errors = _errors(ast)
+    expect(errors[0].message).toMatch(/not allowed inside/)
+  })
+})

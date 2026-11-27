@@ -23,7 +23,8 @@
     "gd_parent_variable_override": "Override a variable_* of the parent before its execution.",
     "gd_rule_elseif": "Add an 'else if' branch: an extra condition checked when the ones above fail.",
     "gd_rule_else": "Add an 'else' branch: runs when no condition above matched.",
-    "gd_add_bonus": "Adds a named bonus to the points of a rule's 'assign points': a fixed number of points, or a multiple of the base points (×2 = double points). Does not end the rule. Not applied when only the fallback assign runs. Each bonus is stored in the award's points breakdown."
+    "gd_add_bonus": "Adds a named bonus to the points of a rule's 'assign points': a fixed number of points, or a multiple of the base points (×2 = double points). Does not end the rule. Not applied when only the fallback assign runs. Each bonus is stored in the award's points breakdown.",
+    "gd_reject": "Refuses the event with a reason code (e.g. MILESTONE_NOT_REACHED). The award request fails with error DSL_REJECTED and nothing is recorded, so the same event can still earn points later. Ends the run: bonuses and callback data gathered before it are dropped. Use it in a rule, or on its own as the fallback for events no rule matched."
   },
   "labels": {
     "when": "when",
@@ -54,7 +55,8 @@
     "override": "override",
     "addBonus": "add bonus",
     "bonusPoints": "points",
-    "bonusTimesBase": "× base points"
+    "bonusTimesBase": "× base points",
+    "rejectWithReason": "reject with reason"
   },
   "fieldsTable": {
     "title": "Available fields",

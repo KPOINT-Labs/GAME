@@ -185,6 +185,9 @@ const StrategyEditor = () => {
   const [simForm, setSimForm] = useState(INITIAL_SIM_FORM)
   const [simResult, setSimResult] = useState(null)
   const [simError, setSimError] = useState(null)
+  // True when simError is a 'reject' block refusing the test event: the
+  // strategy worked as designed, so it shows as a warning, not an error.
+  const [simRejected, setSimRejected] = useState(false)
   const [isSimulating, setIsSimulating] = useState(false)
   // The exact AST that produced ``simResult`` - kept so the trace panel
   // walks the same tree the interpreter ran (node ids line up 1:1).
@@ -807,6 +810,7 @@ const StrategyEditor = () => {
   // rather than the last-saved version.
   const handleSimulate = useCallback(async () => {
     setSimError(null)
+    setSimRejected(false)
     setSimResult(null)
     setSimRuns(null)
     setSimAst(null)
@@ -878,6 +882,11 @@ const StrategyEditor = () => {
       }
       setSimAst(ast)
     } catch (err) {
+      const detail = err?.response?.data?.detail
+      if (detail?.code === 'DSL_REJECTED') {
+        setSimRejected(true)
+        focusBlock(workspaceRef.current, detail.params?.nodeId)
+      }
       setSimError(translateDslError(t, err) || extractError(err, t))
     } finally {
       setIsSimulating(false)
@@ -1683,7 +1692,7 @@ const StrategyEditor = () => {
             </CForm>
 
             {simError && (
-              <CAlert color="danger" className="mt-3">
+              <CAlert color={simRejected ? 'warning' : 'danger'} className="mt-3">
                 {simError}
               </CAlert>
             )}
@@ -1947,6 +1956,15 @@ function highlightErrorBlocks(workspace, errors, t) {
     firstBlock.select()
     workspace.centerOnBlock(firstBlock.id)
   }
+}
+
+// Select and centre one block (e.g. the 'reject' that refused a test event).
+function focusBlock(workspace, nodeId) {
+  if (!workspace || !nodeId) return
+  const block = workspace.getBlockById(nodeId)
+  if (!block) return
+  block.select()
+  workspace.centerOnBlock(block.id)
 }
 
 // The ``blocklyXml`` column carries two shapes: Blockly's modern JSON

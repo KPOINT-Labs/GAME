@@ -27,6 +27,8 @@ class StatusBreakdown(BaseModel):
     """Run counts grouped by terminal status."""
 
     ok: int = 0
+    # Runs a reject statement ended: the event was refused, not a failure.
+    rejected: int = 0
     error: int = 0
     timeout: int = 0
     limit: int = 0

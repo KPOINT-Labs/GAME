@@ -23,7 +23,7 @@ Labels are intentionally minimal:
   Cardinality is bounded by the number of realms (small).
 * ``strategy_type`` (``DSL_FULL`` / ``DSL_EXTEND``) -- two values
   total, so we can split the latency dashboard.
-* ``status`` (``ok`` / ``error`` / ``timeout`` / ``limit``) on the
+* ``status`` (``ok`` / ``rejected`` / ``error`` / ``timeout`` / ``limit``) on the
   duration histogram so a healthy p99 isn't dragged down by long
   error paths.
 
@@ -40,6 +40,12 @@ is required for an accurate p99 alert at 250ms.
 from __future__ import annotations
 
 from prometheus_client import Counter, Histogram
+
+# Run statuses that are not failures. ``rejected`` is a reject statement
+# refusing a valid event: it is not counted in dsl_execution_errors_total
+# (so it never trips the error-ratio alert) and its log rows are sampled
+# like ok runs rather than always kept.
+NON_ERROR_STATUSES = frozenset({"ok", "rejected"})
 
 DSL_LATENCY_BUCKETS = (
     0.005,
@@ -126,7 +132,7 @@ def observe(
         realm=realm_label,
         strategy_type=type_label,
     ).inc(nodes_executed)
-    if status != "ok":
+    if status not in NON_ERROR_STATUSES:
         dsl_execution_errors_total.labels(
             realm=realm_label,
             strategy_type=type_label,

@@ -15,7 +15,7 @@ from app.api.v1.endpoints.games_common import (
 )
 from app.core.config import configs
 from app.core.container import Container
-from app.core.exceptions import ForbiddenError, InternalServerError
+from app.core.exceptions import DslRejectedError, ForbiddenError, InternalServerError
 from app.middlewares.auth_context import AuditLogger, audit_log
 from app.middlewares.authentication import auth_api_key_or_oauth2, auth_oauth2
 from app.model.cohorts import COHORT_PATTERN
@@ -1567,6 +1567,20 @@ async def assign_points_to_user(
             is_admin=auth.is_admin,
             enforce_scope=True,
         )
+    except DslRejectedError as exc:
+        # The strategy's rules refused the event (422 DSL_REJECTED). An
+        # expected outcome, not a failure: no traceback, info-level audit.
+        reject_payload = {
+            "gameId": str(gameId),
+            "externalTaskId": externalTaskId,
+            "externalUserId": schema.externalUserId,
+            "correlationId": correlation_id,
+            "idempotencyKey": idempotency_key,
+            "reason": exc.params.get("reason"),
+        }
+        logger.info("assign_points_to_user rejected", extra=reject_payload)
+        await audit.info("Points assignment rejected by strategy", reject_payload)
+        raise
     except Exception as exc:
         mapped_exc = _map_write_exception(exc, correlation_id=correlation_id)
         error_payload = {
