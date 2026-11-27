@@ -217,7 +217,8 @@ def is_valid_bonus_key(value: Any) -> bool:
 # ``reject.reason``: an upper-case code the caller can branch on. The
 # ``DSL_`` prefix is reserved for GAME's own error codes.
 REJECT_REASON_MAX_LEN = 64
-_REJECT_REASON_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
+# fullmatch (not match + "$"), so a trailing newline ("CODE\n") is refused.
+_REJECT_REASON_RE = re.compile(r"[A-Z][A-Z0-9_]{0,63}")
 RESERVED_REJECT_REASON_PREFIX = "DSL_"
 
 
@@ -225,7 +226,7 @@ def is_valid_reject_reason(value: Any) -> bool:
     """``reject.reason``: 1-64 chars of ``[A-Z0-9_]``, a letter first, no ``DSL_``."""
     return (
         isinstance(value, str)
-        and bool(_REJECT_REASON_RE.match(value))
+        and bool(_REJECT_REASON_RE.fullmatch(value))
         and not value.startswith(RESERVED_REJECT_REASON_PREFIX)
     )
 

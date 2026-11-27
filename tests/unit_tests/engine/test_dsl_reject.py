@@ -129,6 +129,10 @@ async def _run(ast, data=None):
         ("DSL_REJECTED", False),
         ("DSL_ANYTHING", False),
         ("DSLX_IS_FINE", True),
+        # A trailing newline must not slip past the end anchor.
+        ("NOT_ALLOWED\n", False),
+        ("A" * 64 + "\n", False),
+        ("NOT_ALLOWED\r\n", False),
         (None, False),
         (5, False),
     ],
@@ -166,7 +170,9 @@ def test_validator_accepts_reject_as_default():
     validate_ast(_program([], default=_reject("rej")))
 
 
-@pytest.mark.parametrize("reason", ["lower", "DSL_REJECTED", "", "A" * 65, 3])
+@pytest.mark.parametrize(
+    "reason", ["lower", "DSL_REJECTED", "", "A" * 65, 3, "NOT_ALLOWED\n"]
+)
 def test_validator_rejects_invalid_reason(reason):
     ast = _program([], default=_reject("rej", reason))
 
