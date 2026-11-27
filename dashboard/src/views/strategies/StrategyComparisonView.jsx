@@ -87,6 +87,12 @@ function StatusBar({ breakdown }) {
   const bars = [
     { key: 'ok', label: t('observability.labels.ok'), color: 'success', count: breakdown.ok },
     {
+      key: 'rejected',
+      label: t('observability.labels.rejected'),
+      color: 'primary',
+      count: breakdown.rejected,
+    },
+    {
       key: 'error',
       label: t('observability.labels.error'),
       color: 'danger',

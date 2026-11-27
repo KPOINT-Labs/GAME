@@ -50,6 +50,7 @@ export const STATEMENT_ALLOWED_CONTEXTS = {
   set_points: new Set(['post']),
   set_case_name: new Set(['post']),
   add_bonus: new Set(['rule']),
+  reject: new Set(['rule', 'default']),
 }
 
 // Keys that are NOT valid inside parent_variables. Currently
@@ -73,6 +74,11 @@ export const BONUS_KEY_REGEX = /^[A-Za-z0-9_]{1,64}$/
 // Mirrors BONUS_MODES: a fixed bonus's value is points, a multiplier's is a
 // factor of the base points (2 = double points). Omitted means 'fixed'.
 export const BONUS_MODES = ['fixed', 'multiplier']
+
+// Mirrors app/engine/dsl_ast.py is_valid_reject_reason: an upper-case code,
+// a letter first; the DSL_ prefix is reserved for GAME's own error codes.
+export const REJECT_REASON_REGEX = /^[A-Z][A-Z0-9_]{0,63}$/
+export const RESERVED_REJECT_REASON_PREFIX = 'DSL_'
 
 // Mirrors backend config limit so the editor can warn the designer
 // before the backend rejects an oversized AST.

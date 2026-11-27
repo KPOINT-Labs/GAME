@@ -51,6 +51,7 @@ menu so you can jump from the editor straight to the explanation.
 | [`gd_assign_points`](blocks/assign-points.md) | Award N points with a case name and stop.   |
 | [`gd_add_bonus`](blocks/add-bonus.md) | Add a named bonus (fixed points or a multiple of the base points) on top of a rule's assigned points; stored in the points breakdown. |
 | [`gd_set_callback_data`](blocks/set-callback-data.md) | Add a key to the response payload. |
+| [`gd_reject`](blocks/reject.md) | Refuse the event with a reason code: the award fails with 422 `DSL_REJECTED` and nothing is recorded. |
 | [`gd_pre_rule`](blocks/pre-rule.md) | Rule that runs before the parent strategy.           |
 | [`gd_post_rule`](blocks/post-rule.md) | Rule that runs after the parent strategy.          |
 | [`gd_set_data`](blocks/set-data.md) | (`pre_rules` only) Mutate the data dict before the parent sees it. |

@@ -26,6 +26,7 @@ from app.core.config import configs
 from app.core.exceptions import (
     DslExecutionError,
     DslLimitExceededError,
+    DslRejectedError,
     DslTimeoutError,
     DslValidationError,
 )
@@ -249,6 +250,16 @@ class DslStrategy(BaseStrategy):
             trace = self._last_trace
             nodes_executed = self._last_nodes_executed
             return result
+        except DslRejectedError as exc:
+            # A reject is the rules refusing a valid event, not a failure:
+            # its own status keeps it out of error counts and alerts. The
+            # reason is the error code; the trace up to the reject rides on
+            # the exception (it never reached _run_phase's bookkeeping).
+            status = "rejected"
+            error_code = (exc.params or {}).get("reason") or "DSL_REJECTED"
+            trace = (self._last_trace or []) + list(exc.trace)
+            nodes_executed = self._last_nodes_executed + len(exc.trace)
+            raise
         except DslTimeoutError as exc:
             status = "timeout"
             error_code = getattr(exc, "code", None) or "DSL_TIMEOUT"

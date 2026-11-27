@@ -136,9 +136,9 @@ class DslExecutionObserver:
             # is fine -- metrics still flow, persistence simply skips.
             return
 
-        is_error = status != "ok"
+        is_error = status not in dsl_metrics.NON_ERROR_STATUSES
         sample_rate = _config_module.configs.DSL_EXECUTION_LOG_SAMPLE_RATE
-        # Always keep errors; sample OK runs.
+        # Always keep failures; sample ok and rejected runs.
         should_persist = is_error or (
             sample_rate > 0 and self._rng.random() < sample_rate
         )

@@ -39,9 +39,10 @@ class StrategyExecutionLog(BaseModel, table=True):
         externalGameId/externalTaskId/externalUserId (str): The scoring
           event coordinates. Kept verbatim so an admin can reproduce
           the run via ``/simulate``.
-        status (str): ``ok`` / ``error`` / ``timeout`` / ``limit``.
+        status (str): ``ok`` / ``rejected`` / ``error`` / ``timeout`` / ``limit``.
         errorCode (str): ``DSL_*`` code from ``app/core/exceptions.py``
-          when ``status != ok``; nullable otherwise.
+          when ``status != ok`` (the reject reason when ``status ==
+          rejected``); nullable otherwise.
         points (numeric): Computed points; nullable when status != ok.
         caseName (str): ``case_name`` returned to the caller.
         durationMs (numeric): Wall-clock duration in milliseconds.

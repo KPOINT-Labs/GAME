@@ -162,15 +162,17 @@ def _status_breakdown(raw: dict) -> StatusBreakdown:
     """Normalise the repo's free-form ``{status: count}`` map onto the
     enum the dashboard expects, lumping anything unrecognised into
     ``other`` so a new status code doesn't blow up the chart."""
-    known = {"ok", "error", "timeout", "limit"}
+    known = {"ok", "rejected", "error", "timeout", "limit"}
     ok = int(raw.get("ok", 0))
+    rejected = int(raw.get("rejected", 0))
     error = int(raw.get("error", 0))
     timeout = int(raw.get("timeout", 0))
     limit = int(raw.get("limit", 0))
     other = sum(int(v) for k, v in raw.items() if k not in known)
-    total = ok + error + timeout + limit + other
+    total = ok + rejected + error + timeout + limit + other
     return StatusBreakdown(
         ok=ok,
+        rejected=rejected,
         error=error,
         timeout=timeout,
         limit=limit,
@@ -362,7 +364,9 @@ class StrategyObservabilityService:
 
         breakdown = _status_breakdown(status_raw)
         if breakdown.total:
-            success_rate = breakdown.ok / breakdown.total
+            # A rejected run completed as designed (the rules refused the
+            # event), so it counts as a success, not an error.
+            success_rate = (breakdown.ok + breakdown.rejected) / breakdown.total
             error_rate = (
                 breakdown.error + breakdown.timeout + breakdown.limit
             ) / breakdown.total

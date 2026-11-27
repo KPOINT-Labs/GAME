@@ -37,6 +37,10 @@ Execution semantics mirror ``app/engine/default.py``:
   component. Bonuses are discarded when the run ends in ``default`` or with
   no ``assign_points`` at all; ``default`` still reports a base-only
   breakdown.
+* ``reject`` (main rules or ``default``) ends the run by raising
+  ``DslRejectedError`` (422 ``DSL_REJECTED``) instead of returning a
+  result, so callers record nothing. Bonuses and callback data gathered
+  before it are discarded; the trace up to the reject rides on the error.
 """
 
 from __future__ import annotations
@@ -47,6 +51,7 @@ from typing import Any, Dict, List, Optional, Tuple, TypedDict
 from app.core.exceptions import (
     DslExecutionError,
     DslLimitExceededError,
+    DslRejectedError,
     DslValidationError,
 )
 from app.engine.dsl_ast import (
@@ -65,6 +70,7 @@ from app.engine.dsl_ast import (
     NODE_LITERAL,
     NODE_NOT,
     NODE_OR,
+    NODE_REJECT,
     NODE_RETURN,
     NODE_SET_CALLBACK_DATA,
     NODE_SET_CASE_NAME,
@@ -529,6 +535,26 @@ class DslInterpreter:
                 }
             )
             return
+
+        if ntype == NODE_REJECT:
+            # Not a halt with a result: the event is refused and the caller
+            # must not record anything, so this raises past execute().
+            reason = node["reason"]
+            state.trace.append(
+                {
+                    "nodeId": node.get("id"),
+                    "type": ntype,
+                    "value": reason,
+                    "branch": "reject",
+                }
+            )
+            raise DslRejectedError(
+                detail=f"Event rejected by strategy: {reason}",
+                headers={"X-Node-Id": str(node.get("id"))},
+                code="DSL_REJECTED",
+                params={"reason": reason, "nodeId": node.get("id")},
+                trace=state.trace,
+            )
 
         if ntype == NODE_RETURN:
             state.trace.append(

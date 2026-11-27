@@ -17,5 +17,6 @@
   "DSL_TIMEOUT": "La simulación tardó más de {{timeoutMs}}ms y fue interrumpida.",
   "DSL_UNKNOWN_STATEMENT": "Tipo de instrucción desconocido: '{{nodeType}}' (nodo {{nodeId}}).",
   "DSL_ADD_BONUS_NOT_NUMBER": "El valor de 'sumar bono' debe ser un número (recibido: {{actualType}}, nodo {{nodeId}}).",
-  "DSL_ADD_BONUS_NOT_INTEGER": "'sumar bono' en puntos debe ser un número entero (recibido: {{value}}, nodo {{nodeId}}). Usa int(...) o un multiplicador."
+  "DSL_ADD_BONUS_NOT_INTEGER": "'sumar bono' en puntos debe ser un número entero (recibido: {{value}}, nodo {{nodeId}}). Usa int(...) o un multiplicador.",
+  "DSL_REJECTED": "La estrategia rechazó este evento: {{reason}} (nodo {{nodeId}}). No se registraría nada."
 }

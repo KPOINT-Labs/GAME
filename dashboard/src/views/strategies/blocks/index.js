@@ -55,6 +55,7 @@ const HELP_SLUGS = {
   gd_assign_points: 'assign-points',
   gd_set_callback_data: 'set-callback-data',
   gd_add_bonus: 'add-bonus',
+  gd_reject: 'reject',
   gd_pre_rule: 'pre-rule',
   gd_post_rule: 'post-rule',
   gd_set_data: 'set-data',
@@ -92,6 +93,7 @@ const FALLBACK_LABELS = {
   addBonus: 'sumar bono',
   bonusPoints: 'puntos',
   bonusTimesBase: '× puntos base',
+  rejectWithReason: 'rechazar con motivo',
   equals: '=',
   preWhen: 'PRE - cuando',
   postWhen: 'POST - cuando',
@@ -649,6 +651,23 @@ export function registerDslBlocks(tFn) {
     },
   }
 
+  // gd_reject
+  // Refuses the event: the award fails with 422 DSL_REJECTED and nothing
+  // is recorded, so the same event can still earn points later. Halts the
+  // run, so it has no next connection. Allowed inside a rule or floating
+  // on its own as the fallback (program.default).
+  Blockly.Blocks.gd_reject = {
+    init() {
+      this.appendDummyInput()
+        .appendField(label('rejectWithReason'))
+        .appendField(new Blockly.FieldTextInput('NOT_ALLOWED'), 'REASON')
+      this.setPreviousStatement(true, 'Statement')
+      this.setColour(0)
+      this.setTooltip(tooltip('gd_reject'))
+      this.setHelpUrl(HELP_URLS.gd_reject)
+    },
+  }
+
   // DSL_EXTEND blocks. These only appear in the toolbox when
   // the editor is in "Extender existente" mode. The generator routes
   // top-level gd_pre_rule / gd_post_rule into program.pre_rules /
@@ -794,7 +813,7 @@ const TOOLBOX_CATEGORIES_FULL = [
   {
     key: 'assign',
     colour: 60,
-    blocks: ['gd_assign_points', 'gd_add_bonus', 'gd_set_callback_data'],
+    blocks: ['gd_assign_points', 'gd_add_bonus', 'gd_set_callback_data', 'gd_reject'],
   },
 ]
 

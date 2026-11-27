@@ -100,7 +100,8 @@
       "gd_set_points": "Set points",
       "gd_set_case_name": "Set caseName",
       "gd_field_parent": "Parent field",
-      "gd_add_bonus": "Add bonus"
+      "gd_add_bonus": "Add bonus",
+      "gd_reject": "Reject"
     }
   },
   "lifecycle": {

@@ -81,6 +81,12 @@ NODE_SET_CASE_NAME = "set_case_name"
 # factor of the base). Main ``rules`` only (see ``build_points_breakdown``).
 NODE_ADD_BONUS = "add_bonus"
 
+# Refuses the event: halts the run and fails the award with 422
+# ``DSL_REJECTED`` (``params.reason`` = the node's ``reason``). Nothing is
+# recorded, so the idempotency key stays unused. Main ``rules`` and
+# ``default`` only (DSL_EXTEND pre-rules have ``veto``, which records a 0).
+NODE_REJECT = "reject"
+
 
 ALL_NODE_TYPES: Set[str] = {
     NODE_PROGRAM,
@@ -101,6 +107,7 @@ ALL_NODE_TYPES: Set[str] = {
     NODE_SET_POINTS,
     NODE_SET_CASE_NAME,
     NODE_ADD_BONUS,
+    NODE_REJECT,
 }
 
 CONDITION_NODE_TYPES: Set[str] = {
@@ -128,6 +135,7 @@ STATEMENT_NODE_TYPES: Set[str] = {
     NODE_SET_POINTS,
     NODE_SET_CASE_NAME,
     NODE_ADD_BONUS,
+    NODE_REJECT,
 }
 
 
@@ -146,6 +154,7 @@ STATEMENT_ALLOWED_CONTEXTS: Dict[str, Set[str]] = {
     NODE_SET_POINTS: {"post"},
     NODE_SET_CASE_NAME: {"post"},
     NODE_ADD_BONUS: {"rule"},
+    NODE_REJECT: {"rule", "default"},
 }
 
 
@@ -202,6 +211,23 @@ def is_valid_bonus_key(value: Any) -> bool:
         isinstance(value, str)
         and bool(_BONUS_KEY_RE.match(value))
         and value != BASE_COMPONENT_KEY
+    )
+
+
+# ``reject.reason``: an upper-case code the caller can branch on. The
+# ``DSL_`` prefix is reserved for GAME's own error codes.
+REJECT_REASON_MAX_LEN = 64
+# fullmatch (not match + "$"), so a trailing newline ("CODE\n") is refused.
+_REJECT_REASON_RE = re.compile(r"[A-Z][A-Z0-9_]{0,63}")
+RESERVED_REJECT_REASON_PREFIX = "DSL_"
+
+
+def is_valid_reject_reason(value: Any) -> bool:
+    """``reject.reason``: 1-64 chars of ``[A-Z0-9_]``, a letter first, no ``DSL_``."""
+    return (
+        isinstance(value, str)
+        and bool(_REJECT_REASON_RE.fullmatch(value))
+        and not value.startswith(RESERVED_REJECT_REASON_PREFIX)
     )
 
 

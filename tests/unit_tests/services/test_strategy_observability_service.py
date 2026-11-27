@@ -252,6 +252,23 @@ class TestGetMetrics:
         assert result.successRate == 0.0
         assert result.errorRate == 0.0
 
+    @pytest.mark.asyncio
+    async def test_rejected_runs_count_as_success_not_error(self):
+        # A reject is the rules refusing an event as designed, so it is
+        # neither an error nor a drag on the success rate.
+        defs_service = MagicMock()
+        defs_service.get_strategy = AsyncMock(return_value=_make_strategy())
+        repo = _make_repo(status_counts={"ok": 60, "rejected": 30, "error": 10})
+        svc = StrategyObservabilityService(
+            execution_log_repository=repo,
+            strategy_definition_service=defs_service,
+        )
+        result = await svc.get_metrics(id="s1", realmId="realm-a")
+        assert result.statusBreakdown.rejected == 30
+        assert result.statusBreakdown.total == 100
+        assert result.successRate == pytest.approx(0.90)
+        assert result.errorRate == pytest.approx(0.10)
+
 
 class TestCompare:
     @pytest.mark.asyncio
